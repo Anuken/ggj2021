@@ -1,4 +1,4 @@
-import ecs, presets/[basic, effects, content], math, random
+import ecs, presets/[basic, effects, content], math, random, quadtree
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
@@ -9,6 +9,10 @@ type
   Tile = object
     floor: Block
     wall: Block
+  
+  QuadRef = object
+    entity: EntityRef
+    x, y, w, h: float32
 
 registerComponents(defaultComponentOptions):
   type
@@ -20,6 +24,9 @@ registerComponents(defaultComponentOptions):
       flip: bool
       walk: float32
     Input = object
+    Bullet = object
+      shooter: EntityId
+      w, h: float32
 
 makeContent:
   air = Block()
@@ -27,7 +34,7 @@ makeContent:
   wall = Block(solid: true)
 
 const 
-  scl = 80.0
+  scl = 64.0 + 32.0
   worldSize = 100
   tileSizePx = 32'f32
   layerFloor = -10000000'f32
@@ -83,6 +90,21 @@ sys("animate", [Vel, Person]):
       item.person.walk += fau.delta
     else:
       item.person.walk = 0
+
+sys("quadtree", [Pos, Vel, Bullet]):
+  vars:
+    tree: Quadtree[QuadRef]
+  init:
+    sys.tree = newQuadtree[QuadRef](rect(-0.5, -0.5, worldSize + 1, worldSize + 1))
+  start:
+    sys.tree.clear()
+  all:
+    sys.tree.insert(QuadRef(entity: item.entity, x: item.pos.x - item.bullet.w/2.0, y: item.pos.y - item.bullet.h/2.0, w: item.bullet.w, h: item.bullet.h))
+
+sys("bulletMove", [Pos, Vel, Bullet]):
+  all:
+    item.pos.x += item.vel.x
+    item.pos.y += item.vel.y
 
 sys("moveSolid", [Pos, Vel, Solid]):
   all:
