@@ -33,7 +33,7 @@ jobs:
           git config --global user.name "Github Actions"
           git clone --recursive https://github.com/Anuken/ggj2021.git
           cd ggj2021
-          nake web
+          nimble web
           git checkout gh-pages
           git pull
           rm -rf index*
