@@ -1,4 +1,4 @@
-import ecs, presets/[basic, effects, content], math, random, quadtree
+import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
@@ -23,6 +23,7 @@ registerComponents(defaultComponentOptions):
     Person = object
       flip: bool
       walk: float32
+      shoot: float32
     Input = object
     Solid = object
     Bullet = object
@@ -38,11 +39,13 @@ defineEffects:
     fillCircle(e.x, e.y, 10.px * e.fout, color = colorWhite, z = -e.y)
 
 const 
-  scl = 64.0 + 32.0
+  scl = 64.0
   worldSize = 100
   tileSizePx = 32'f32
-  pixelation = 3
+  pixelation = 2
   layerFloor = -10000000'f32
+  shootPos = vec2(13, 30) / tileSizePx
+  reload = 0.1
 
 var tiles = newSeq[Tile](worldSize * worldSize)
 
@@ -71,11 +74,17 @@ template bullet(aid: EffectId, xp, yp: float32, rot: float32 = 0, col: Color = c
   let vel = vec2l(rot, 0.1)
   discard newEntityWith(Pos(x: xp, y: yp), Timed(lifetime: 4), Effect(id: aid, rotation: rot, color: col), Bullet(), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y))
 
+macro shoot(t: untyped, xp, yp, rot: float32) =
+  let effectId = ident("effectId" & t.repr.capitalizeAscii)
+  result = quote do:
+    let vel = vec2l(`rot`, 0.1)
+    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y))
+
 sys("init", [Main]):
 
   init:
     initContent()
-    discard newEntityWith(Pos(x: 10, y: 10), Person(), Vel(), Hit(w: 0.4, h: 0.4), Solid(), Input())
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.4, h: 0.4), Solid(), Input())
     fau.pixelScl = 1.0 / tileSizePx
 
     for tile in tiles.mitems:
@@ -84,15 +93,18 @@ sys("init", [Main]):
 
       if rand(10) < 1: tile.wall = blockWall
   
-
 sys("controlled", [Person, Input, Pos, Vel]):
   all:
     let v = vec2(axis(keyA, keyD), axis(KeyCode.keyS, keyW)).lim(1) * 5 * fau.delta
     item.vel.x += v.x
     item.vel.y += v.y
+    item.person.shoot -= fau.delta
 
-    if keyMouseLeft.tapped:
-      bullet(effectIdCircleBullet, item.pos.x, item.pos.y, rot = item.pos.vec2.angle(mouseWorld()))
+    if keyMouseLeft.down:
+      if item.person.shoot <= 0:
+        let offset = shootPos * vec2(-item.person.flip.sign, 1)
+        shoot(circleBullet, item.pos.x + offset.x, item.pos.y + offset.y, rot = item.pos.vec2.angle(mouseWorld()))
+        item.person.shoot = reload
 
 sys("animate", [Vel, Person]):
   all:
@@ -172,7 +184,7 @@ sys("drawPerson", [Person, Pos]):
     var p = "player".patch
     #if item.person.walk > 0:
     #  p = ("charwalk" & $(((item.person.walk * 7) mod 4) + 1).int).patch
-    draw(p, item.pos.x, item.pos.y - 4.px, z = -item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign + sin(item.person.walk, 0.08, 0.3) * -item.person.flip.sign, height = p.heightf.px - sin(item.person.walk, 0.08, 0.3))
+    draw(p, item.pos.x, item.pos.y - 4.px, z = -item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign)
 
 makeEffectsSystem()
 
