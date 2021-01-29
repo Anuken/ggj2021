@@ -1,4 +1,4 @@
-import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils
+import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils, bloom
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
@@ -10,7 +10,7 @@ const
   layerFloor = -10000000'f32
   shootPos = vec2(13, 30) / tileSizePx
   reload = 0.1
-  bloomLayer = 10'f32
+  layerBloom = 10'f32
 
 type
   Block = ref object of Content
@@ -46,7 +46,8 @@ makeContent:
 
 defineEffects:
   circleBullet:
-    fillCircle(e.x, e.y, 10.px * e.fout, color = colorWhite, z = -e.y)
+    draw("player".patch, e.x, e.y, z = layerBloom)
+    #fillCircle(e.x, e.y, 10.px * e.fout, color = rgb(0.6, 0.6, 0.6), z = layerBloom)
 
 var tiles = newSeq[Tile](worldSize * worldSize)
 
@@ -103,8 +104,8 @@ sys("controlled", [Person, Input, Pos, Vel]):
 
     if keyMouseLeft.down:
       if item.person.shoot <= 0:
-        let offset = shootPos * vec2(-item.person.flip.sign, 1)
-        shoot(circleBullet, item.pos.x + offset.x, item.pos.y + offset.y, rot = item.pos.vec2.angle(mouseWorld()))
+        let offset = shootPos * vec2(-item.person.flip.sign, 1) + item.pos.vec2
+        shoot(circleBullet, offset.x, offset.y, rot = offset.angle(mouseWorld()))
         item.person.shoot = reload
 
 sys("animate", [Vel, Person]):
@@ -155,8 +156,10 @@ sys("followCam", [Pos, Input]):
 sys("draw", [Main]):
   vars:
     buffer: Framebuffer
+    bloom: Bloom
   init:
     sys.buffer = newFramebuffer()
+    sys.bloom = newBloom()
   start:
     if keyEscape.tapped: quitApp()
     
@@ -164,7 +167,9 @@ sys("draw", [Main]):
     fau.cam.use()
 
     sys.buffer.resize(fau.width div pixelation, fau.height div pixelation)
-    let buf = sys.buffer
+    let 
+      buf = sys.buffer
+      bloom = sys.bloom
 
     buf.push()
 
@@ -172,6 +177,8 @@ sys("draw", [Main]):
       buf.pop()
       buf.blitQuad()
     )
+
+    drawLayer(layerBloom, proc() = bloom.capture(), proc() = bloom.render())
 
     for x, y, t in eachTile():
       draw(t.floor.name.patch, x, y, layerFloor)
@@ -184,7 +191,7 @@ sys("drawPerson", [Person, Pos]):
   all:
     var p = "player".patch
     if item.person.walk > 0:
-      p = ("player_walk_" & $(((item.person.walk * 7) mod 4) + 1).int).patch
+      p = ("player_walk_" & $(((item.person.walk * 6) mod 4) + 1).int).patch
     draw(p, item.pos.x, item.pos.y - 4.px, z = -item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign)
 
 makeEffectsSystem()

@@ -11,21 +11,23 @@ void main(){
 }
 """
 
-type Bloom = object
+type Bloom* = object
   buffer, p1, p2: Framebuffer
   thresh, bloom, blur: Shader
   blurPasses*: int
+  scaling: int
 
-proc newBloom(): Bloom =
+proc newBloom*(scaling: int = 4): Bloom =
   result.buffer = newFramebuffer()
   result.p1 = newFramebuffer()
   result.p2 = newFramebuffer()
   result.blurPasses = 1
+  result.scaling = scaling
 
   result.thresh = newShader(screenspace,
   """ 
   uniform lowp sampler2D u_texture0;
-  uniform lowp vec2 threshold;
+  uniform lowp vec2 u_threshold;
   varying vec2 v_texc;
 
   void main(){
@@ -50,9 +52,8 @@ proc newBloom(): Bloom =
 
   void main(){
     vec4 original = texture2D(u_texture0, v_texc) * u_bloomIntensity;
-    vec4 bloom = texture2D(u_texture1, v_texc) * u_originalIntensity; 	
-      original = original *  (vec4(1.0) - bloom);	 	
-    gl_FragColor =  original + bloom; 	
+    vec4 bloom = texture2D(u_texture1, v_texc) * u_originalIntensity; 	 	
+    gl_FragColor =  original * (vec4(1.0) - bloom) + bloom;
   }
 
   """
@@ -107,11 +108,30 @@ proc newBloom(): Bloom =
   """
   )
 
+  let thresh = 0.8'f32
+  result.bloom.seti("u_texture0", 0)
+  result.bloom.seti("u_texture1", 1)
+  result.bloom.setf("u_bloomIntensity", 2.5)
+  result.bloom.setf("u_originalIntensity", 1.0)
+  result.thresh.setf("u_threshold", thresh, 1.0 / (1.0 - thresh))
+
 proc capture*(bloom: Bloom) =
   bloom.buffer.push(colorClear)
 
+  let 
+    w = fau.width
+    h = fau.height
+  
+  if w != bloom.buffer.width or h != bloom.buffer.height:
+    bloom.buffer.resize(w, h)
+    bloom.p1.resize(w div bloom.scaling, h div bloom.scaling)
+    bloom.p2.resize(w div bloom.scaling, h div bloom.scaling)
+    bloom.blur.setf("size", w.float32, h.float32)
+
 proc render*(bloom: Bloom) =
   bloom.buffer.pop()
+
+  blendDisabled.use()
 
   bloom.p1.push()
   bloom.buffer.blitQuad(bloom.thresh)
@@ -129,6 +149,8 @@ proc render*(bloom: Bloom) =
     bloom.blur.setf("dir", 0, 1)
     bloom.p2.blitQuad(bloom.blur)
     bloom.p1.pop()
+  
+  blendNormal.use()
 
   bloom.p1.texture.use(1)
   bloom.buffer.blitQuad(bloom.bloom)
