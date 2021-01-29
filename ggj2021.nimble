@@ -20,7 +20,7 @@ const
 
   builds = [
     #(name: "linux64", os: "linux", cpu: "amd64", args: ""),
-    (name: "win32", os: "windows", cpu: "i386", args: "--gcc.exe:i686-w64-mingw32-gcc --gcc.linkerexe:i686-w64-mingw32-g++"),
+    #(name: "win32", os: "windows", cpu: "i386", args: "--gcc.exe:i686-w64-mingw32-gcc --gcc.linkerexe:i686-w64-mingw32-g++"),
     (name: "win64", os: "windows", cpu: "amd64", args: "--gcc.exe:x86_64-w64-mingw32-gcc --gcc.linkerexe:x86_64-w64-mingw32-g++"),
   ]
 
@@ -39,7 +39,7 @@ task web, "Deploy web build":
   writeFile("build/web/index.html", readFile("build/web/index.html").replace("$title$", capitalizeAscii(app)))
 
 task deploy, "Build for all platforms":
-  webTask()
+  #webTask()
 
   for name, os, cpu, args in builds.items:
     let
