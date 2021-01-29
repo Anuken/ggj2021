@@ -35,7 +35,7 @@ makeContent:
 
 defineEffects:
   circleBullet:
-    fillCircle(e.x, e.y, 10.px * e.fout, color = colorWhite, z = 0)
+    fillCircle(e.x, e.y, 10.px * e.fout, color = colorWhite, z = -e.y)
 
 const 
   scl = 64.0 + 32.0
@@ -118,6 +118,11 @@ sys("bulletMove", [Pos, Vel, Bullet]):
   all:
     item.pos.x += item.vel.x
     item.pos.y += item.vel.y
+
+sys("bulletHitWall", [Pos, Vel, Bullet]):
+  all:
+    if collidesTiles(rectCenter(item.pos.x, item.pos.y, item.bullet.s, item.bullet.s), proc(x, y: int): bool = solid(x, y)):
+      item.entity.delete()
 
 sys("moveSolid", [Pos, Vel, Solid]):
   all:
