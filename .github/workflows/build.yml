@@ -25,6 +25,8 @@ jobs:
           nimble build -Y
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v7
+        with:
+          actions-cache-folder: 'emsdk-cache'
       - name: Verify Emscripten is installed
         run: emcc -v
       - name: Build web version
