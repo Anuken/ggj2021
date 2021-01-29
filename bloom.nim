@@ -17,12 +17,12 @@ type Bloom* = object
   blurPasses*: int
   scaling: int
 
-proc newBloom*(scaling: int = 4): Bloom =
+proc newBloom*(scaling: int = 4, passes: int = 6): Bloom =
   result.buffer = newFramebuffer()
   result.p1 = newFramebuffer()
   result.p2 = newFramebuffer()
-  result.blurPasses = 1
   result.scaling = scaling
+  result.blurPasses = passes
 
   result.thresh = newShader(screenspace,
   """ 
@@ -127,6 +127,9 @@ proc capture*(bloom: Bloom) =
     bloom.p1.resize(w div bloom.scaling, h div bloom.scaling)
     bloom.p2.resize(w div bloom.scaling, h div bloom.scaling)
     bloom.blur.setf("size", w.float32, h.float32)
+    bloom.buffer.texture.filterLinear()
+    bloom.p1.texture.filterLinear()
+    bloom.p2.texture.filterLinear()
 
 proc render*(bloom: Bloom) =
   bloom.buffer.pop()

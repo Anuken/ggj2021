@@ -9,7 +9,7 @@ const
   pixelation = 2
   layerFloor = -10000000'f32
   shootPos = vec2(13, 30) / tileSizePx
-  reload = 0.1
+  reload = 0.2
   layerBloom = 10'f32
 
 type
@@ -46,8 +46,8 @@ makeContent:
 
 defineEffects:
   circleBullet:
-    draw("player".patch, e.x, e.y, z = layerBloom)
-    #fillCircle(e.x, e.y, 10.px * e.fout, color = rgb(0.6, 0.6, 0.6), z = layerBloom)
+    #draw("player".patch, e.x, e.y, z = layerBloom)
+    fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0)
 
 var tiles = newSeq[Tile](worldSize * worldSize)
 
@@ -73,7 +73,7 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
       yield (wcx, wcy, tile(wcx, wcy))
 
 template bullet(aid: EffectId, xp, yp: float32, rot: float32 = 0, col: Color = colorWhite) =
-  let vel = vec2l(rot, 0.1)
+  let vel = vec2l(rot, 0.3)
   discard newEntityWith(Pos(x: xp, y: yp), Timed(lifetime: 4), Effect(id: aid, rotation: rot, color: col), Bullet(), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y))
 
 macro shoot(t: untyped, xp, yp, rot: float32) =
@@ -156,10 +156,10 @@ sys("followCam", [Pos, Input]):
 sys("draw", [Main]):
   vars:
     buffer: Framebuffer
-    bloom: Bloom
+    #bloom: Bloom
   init:
     sys.buffer = newFramebuffer()
-    sys.bloom = newBloom()
+    #sys.bloom = newBloom()
   start:
     if keyEscape.tapped: quitApp()
     
@@ -169,7 +169,7 @@ sys("draw", [Main]):
     sys.buffer.resize(fau.width div pixelation, fau.height div pixelation)
     let 
       buf = sys.buffer
-      bloom = sys.bloom
+      #bloom = sys.bloom
 
     buf.push()
 
@@ -178,7 +178,7 @@ sys("draw", [Main]):
       buf.blitQuad()
     )
 
-    drawLayer(layerBloom, proc() = bloom.capture(), proc() = bloom.render())
+    #drawLayer(layerBloom, proc() = bloom.capture(), proc() = bloom.render())
 
     for x, y, t in eachTile():
       draw(t.floor.name.patch, x, y, layerFloor)
@@ -189,9 +189,9 @@ sys("draw", [Main]):
 
 sys("drawPerson", [Person, Pos]):
   all:
-    var p = "player".patch
+    var p = if keyMouseLeft.down: "player_attack_1".patch else: "player".patch
     if item.person.walk > 0:
-      p = ("player_walk_" & $(((item.person.walk * 6) mod 4) + 1).int).patch
+      p = ((if keyMouseLeft.down: "player_attack_" else: "player_walk_") & $(((item.person.walk * 6) mod 4) + 1).int).patch
     draw(p, item.pos.x, item.pos.y - 4.px, z = -item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign)
 
 makeEffectsSystem()
