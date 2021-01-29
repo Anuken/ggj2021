@@ -18,15 +18,15 @@ registerComponents(defaultComponentOptions):
   type
     Vel = object
       x, y: float32
-    Solid = object
+    Hit = object
       w, h: float32
     Person = object
       flip: bool
       walk: float32
     Input = object
+    Solid = object
     Bullet = object
       shooter: EntityId
-      s: float32
 
 makeContent:
   air = Block()
@@ -69,13 +69,13 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
 
 template bullet(aid: EffectId, xp, yp: float32, rot: float32 = 0, col: Color = colorWhite) =
   let vel = vec2l(rot, 0.1)
-  discard newEntityWith(Pos(x: xp, y: yp), Timed(lifetime: 4), Effect(id: aid, rotation: rot, color: col), Bullet(s: 0.3), Vel(x: vel.x, y: vel.y))
+  discard newEntityWith(Pos(x: xp, y: yp), Timed(lifetime: 4), Effect(id: aid, rotation: rot, color: col), Bullet(), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y))
 
 sys("init", [Main]):
 
   init:
     initContent()
-    discard newEntityWith(Pos(x: 10, y: 10), Person(), Vel(), Solid(w: 0.4, h: 0.4), Input())
+    discard newEntityWith(Pos(x: 10, y: 10), Person(), Vel(), Hit(w: 0.4, h: 0.4), Solid(), Input())
     fau.pixelScl = 1.0 / tileSizePx
 
     for tile in tiles.mitems:
@@ -104,7 +104,7 @@ sys("animate", [Vel, Person]):
     else:
       item.person.walk = 0
 
-sys("quadtree", [Pos, Vel, Bullet]):
+sys("quadtree", [Pos, Vel, Bullet, Hit]):
   vars:
     tree: Quadtree[QuadRef]
   init:
@@ -112,21 +112,21 @@ sys("quadtree", [Pos, Vel, Bullet]):
   start:
     sys.tree.clear()
   all:
-    sys.tree.insert(QuadRef(entity: item.entity, x: item.pos.x - item.bullet.s/2.0, y: item.pos.y - item.bullet.s/2.0, w: item.bullet.s, h: item.bullet.s))
+    sys.tree.insert(QuadRef(entity: item.entity, x: item.pos.x - item.hit.w/2.0, y: item.pos.y - item.hit.h/2.0, w: item.hit.w, h: item.hit.h))
 
 sys("bulletMove", [Pos, Vel, Bullet]):
   all:
     item.pos.x += item.vel.x
     item.pos.y += item.vel.y
 
-sys("bulletHitWall", [Pos, Vel, Bullet]):
+sys("bulletHitWall", [Pos, Vel, Bullet, Hit]):
   all:
-    if collidesTiles(rectCenter(item.pos.x, item.pos.y, item.bullet.s, item.bullet.s), proc(x, y: int): bool = solid(x, y)):
+    if collidesTiles(rectCenter(item.pos.x, item.pos.y, item.hit.w, item.hit.h), proc(x, y: int): bool = solid(x, y)):
       item.entity.delete()
 
-sys("moveSolid", [Pos, Vel, Solid]):
+sys("moveSolid", [Pos, Vel, Solid, Hit]):
   all:
-    let delta = moveDelta(rectCenter(item.pos.x, item.pos.y, item.solid.w, item.solid.h), item.vel.x, item.vel.y, proc(x, y: int): bool = solid(x, y))
+    let delta = moveDelta(rectCenter(item.pos.x, item.pos.y, item.hit.w, item.hit.h), item.vel.x, item.vel.y, proc(x, y: int): bool = solid(x, y))
     item.pos.x += delta.x
     item.pos.y += delta.y
     item.vel.x = 0
@@ -169,10 +169,10 @@ sys("draw", [Main]):
 
 sys("drawPerson", [Person, Pos]):
   all:
-    var p = "char".patch
-    if item.person.walk > 0:
-      p = ("charwalk" & $(((item.person.walk * 7) mod 4) + 1).int).patch
-    draw(p, item.pos.x, item.pos.y - 4.px, z = -item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign)
+    var p = "player".patch
+    #if item.person.walk > 0:
+    #  p = ("charwalk" & $(((item.person.walk * 7) mod 4) + 1).int).patch
+    draw(p, item.pos.x, item.pos.y - 4.px, z = -item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign + sin(item.person.walk, 0.08, 0.3) * -item.person.flip.sign, height = p.heightf.px - sin(item.person.walk, 0.08, 0.3))
 
 makeEffectsSystem()
 
