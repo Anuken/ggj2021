@@ -2,6 +2,16 @@ import ecs, presets/[basic, effects, content], math, random, quadtree, macros, s
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
+const 
+  scl = 64.0
+  worldSize = 100
+  tileSizePx = 32'f32
+  pixelation = 2
+  layerFloor = -10000000'f32
+  shootPos = vec2(13, 30) / tileSizePx
+  reload = 0.1
+  bloomLayer = 10'f32
+
 type
   Block = ref object of Content
     solid: bool
@@ -37,15 +47,6 @@ makeContent:
 defineEffects:
   circleBullet:
     fillCircle(e.x, e.y, 10.px * e.fout, color = colorWhite, z = -e.y)
-
-const 
-  scl = 64.0
-  worldSize = 100
-  tileSizePx = 32'f32
-  pixelation = 2
-  layerFloor = -10000000'f32
-  shootPos = vec2(13, 30) / tileSizePx
-  reload = 0.1
 
 var tiles = newSeq[Tile](worldSize * worldSize)
 
@@ -95,7 +96,7 @@ sys("init", [Main]):
   
 sys("controlled", [Person, Input, Pos, Vel]):
   all:
-    let v = vec2(axis(keyA, keyD), axis(KeyCode.keyS, keyW)).lim(1) * 5 * fau.delta
+    let v = vec2(axis(keyA, keyD), axis(KeyCode.keyS, keyW)).lim(1) * 6 * fau.delta
     item.vel.x += v.x
     item.vel.y += v.y
     item.person.shoot -= fau.delta
@@ -167,7 +168,7 @@ sys("draw", [Main]):
 
     buf.push()
 
-    draw(1, proc() =
+    draw(100, proc() =
       buf.pop()
       buf.blitQuad()
     )
@@ -182,8 +183,8 @@ sys("draw", [Main]):
 sys("drawPerson", [Person, Pos]):
   all:
     var p = "player".patch
-    #if item.person.walk > 0:
-    #  p = ("charwalk" & $(((item.person.walk * 7) mod 4) + 1).int).patch
+    if item.person.walk > 0:
+      p = ("player_walk_" & $(((item.person.walk * 7) mod 4) + 1).int).patch
     draw(p, item.pos.x, item.pos.y - 4.px, z = -item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign)
 
 makeEffectsSystem()
