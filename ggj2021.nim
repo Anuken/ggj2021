@@ -26,17 +26,22 @@ registerComponents(defaultComponentOptions):
     Input = object
     Bullet = object
       shooter: EntityId
-      w, h: float32
+      s: float32
 
 makeContent:
   air = Block()
   floor = Block()
   wall = Block(solid: true)
 
+defineEffects:
+  circleBullet:
+    fillCircle(e.x, e.y, 10.px * e.fout, color = colorWhite, z = 0)
+
 const 
   scl = 64.0 + 32.0
   worldSize = 100
   tileSizePx = 32'f32
+  pixelation = 3
   layerFloor = -10000000'f32
 
 var tiles = newSeq[Tile](worldSize * worldSize)
@@ -62,6 +67,10 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
       
       yield (wcx, wcy, tile(wcx, wcy))
 
+template bullet(aid: EffectId, xp, yp: float32, rot: float32 = 0, col: Color = colorWhite) =
+  let vel = vec2l(rot, 0.1)
+  discard newEntityWith(Pos(x: xp, y: yp), Timed(lifetime: 4), Effect(id: aid, rotation: rot, color: col), Bullet(s: 0.3), Vel(x: vel.x, y: vel.y))
+
 sys("init", [Main]):
 
   init:
@@ -74,12 +83,16 @@ sys("init", [Main]):
       tile.wall = blockAir
 
       if rand(10) < 1: tile.wall = blockWall
+  
 
 sys("controlled", [Person, Input, Pos, Vel]):
   all:
     let v = vec2(axis(keyA, keyD), axis(KeyCode.keyS, keyW)).lim(1) * 5 * fau.delta
     item.vel.x += v.x
     item.vel.y += v.y
+
+    if keyMouseLeft.tapped:
+      bullet(effectIdCircleBullet, item.pos.x, item.pos.y, rot = item.pos.vec2.angle(mouseWorld()))
 
 sys("animate", [Vel, Person]):
   all:
@@ -99,7 +112,7 @@ sys("quadtree", [Pos, Vel, Bullet]):
   start:
     sys.tree.clear()
   all:
-    sys.tree.insert(QuadRef(entity: item.entity, x: item.pos.x - item.bullet.w/2.0, y: item.pos.y - item.bullet.h/2.0, w: item.bullet.w, h: item.bullet.h))
+    sys.tree.insert(QuadRef(entity: item.entity, x: item.pos.x - item.bullet.s/2.0, y: item.pos.y - item.bullet.s/2.0, w: item.bullet.s, h: item.bullet.s))
 
 sys("bulletMove", [Pos, Vel, Bullet]):
   all:
@@ -114,17 +127,33 @@ sys("moveSolid", [Pos, Vel, Solid]):
     item.vel.x = 0
     item.vel.y = 0
 
+makeTimedSystem()
+
 sys("followCam", [Pos, Input]):
   all:
     fau.cam.pos = vec2(item.pos.x, item.pos.y)
     fau.cam.pos += vec2((fau.widthf mod scl) / scl, (fau.heightf mod scl) / scl) * fau.pixelScl
 
 sys("draw", [Main]):
+  vars:
+    buffer: Framebuffer
+  init:
+    sys.buffer = newFramebuffer()
   start:
     if keyEscape.tapped: quitApp()
     
     fau.cam.resize(fau.widthf / scl, fau.heightf / scl)
     fau.cam.use()
+
+    sys.buffer.resize(fau.width div pixelation, fau.height div pixelation)
+    let buf = sys.buffer
+
+    buf.push()
+
+    draw(1, proc() =
+      buf.pop()
+      buf.blitQuad()
+    )
 
     for x, y, t in eachTile():
       draw(t.floor.name.patch, x, y, layerFloor)
@@ -139,5 +168,7 @@ sys("drawPerson", [Person, Pos]):
     if item.person.walk > 0:
       p = ("charwalk" & $(((item.person.walk * 7) mod 4) + 1).int).patch
     draw(p, item.pos.x, item.pos.y - 4.px, z = -item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign)
+
+makeEffectsSystem()
 
 launchFau("ggj2021")
