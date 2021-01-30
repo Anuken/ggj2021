@@ -174,12 +174,8 @@ sys("init", [Main]):
     #fear
     discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
 
-    for i in 0..10:
-      #eye
-      discard newEntityWith(Pos(x: worldSize/2 + rand(-3..3), y: worldSize/2 - 3 + rand(-3..3)), Vel(), Hit(w: 15.px, h: 13.px, y: 3.px), Solid(), Health(amount: 4), Animate(), Eye(), Enemy())
 
     #effectRatText(worldSize/2, worldSize/2 + 4)
-
 
     for tile in tiles.mitems:
       tile.floor = blockGrass
@@ -289,7 +285,7 @@ sys("eye", [Pos, Eye, Solid, Hit, Vel, Animate]):
 
     item.eye.time += fau.delta
     if item.eye.time > 2.0:
-      circle(10):
+      circle(4):
         shoot(shadowBullet, item.entity, item.pos.x, item.pos.y, rot = angle)
       
       item.eye.time = 0
@@ -312,11 +308,15 @@ sys("fearBoss", [Pos, Fear, Animate]):
       
       item.fear.time = 0
 
+      if chance(0.1):
+        discard newEntityWith(Pos(x: item.pos.x + rand(-1..1), y: item.pos.y + 1 + rand(-1..1)), Vel(), Hit(w: 16.px, h: 16.px, y: 3.px), Solid(), Health(amount: 1), Animate(), Eye(), Enemy())
+
+
 makeTimedSystem()
 
 sys("followCam", [Pos, Input]):
   all:
-    fau.cam.pos = vec2(item.pos.x, item.pos.y)
+    fau.cam.pos = vec2(item.pos.x, item.pos.y + 32.px)
     fau.cam.pos += vec2((fau.widthf mod scl) / scl, (fau.heightf mod scl) / scl) * fau.pixelScl
 
 sys("draw", [Main]):
@@ -382,7 +382,7 @@ proc frame(pre: string, time, speed: float32): string = pre & $([1, 2, 3, 2][((t
 
 sys("drawEye", [Eye, Pos, Animate]):
   all:
-    draw("eye1".patch, item.pos.x, item.pos.y + 5.px, align = daBot, z = -item.pos.y)
+    draw(frame("eye", item.animate.time, 4).patch, item.pos.x, item.pos.y + 5.px, align = daBot, z = -item.pos.y)
 
 sys("drawFear", [Fear, Pos, Animate]):
   all:
