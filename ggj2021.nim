@@ -66,6 +66,7 @@ registerComponents(defaultComponentOptions):
     Sadness = object
     Fear = object
       time: float32
+      rage: bool
     Joy = object
       time: float32
     
@@ -131,6 +132,9 @@ defineEffects:
   
   ratText(lifetime = 20):
     font.draw("RAT", e.vec2, z = layerBloom, scale = 3.px)
+  
+  flash(lifetime = 1):
+    draw(fau.white, fau.cam.pos.x, fau.cam.pos.y, width = fau.cam.w, height = fau.cam.h, color = rgba(e.color.r, e.color.g, e.color.b, e.fout))
 
 var tiles = newSeq[Tile](worldSize * worldSize)
 
@@ -179,7 +183,7 @@ sys("init", [Main]):
 
     initContent()
     #player
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.6, h: 0.4), Solid(), Input(), Health(amount: playerHealth))
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.75, h: 0.7, y: 0.35), Solid(), Input(), Health(amount: playerHealth))
 
     #anger
     #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
@@ -194,6 +198,10 @@ sys("init", [Main]):
     for i in 0..1:
       let rad = 10.0'f32
       discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
+      
+    for i in 0..3:
+      let rad = 10.0'f32
+      discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 10), Animate(), Enemy())
 
     #effectRatText(worldSize/2, worldSize/2 + 4)
 
@@ -224,6 +232,7 @@ sys("controlled", [Person, Input, Pos, Vel]):
         item.person.shoot = reload
         effectShoot(offset.x, offset.y)
         item.person.flip = ang >= 90.rad and ang < 270.rad
+        soundShoot.play(pitch = rand(0.8..1.2))
 
 sys("animatePerson", [Vel, Person]):
   all:
@@ -333,29 +342,40 @@ sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
 sys("joyBoss", [Pos, Joy, Animate]):
   all:
     item.joy.time += fau.delta
-    if item.joy.time > 0.3:
-      circle(10):
-        shoot(flowerBullet, item.entity, item.pos.x, item.pos.y + 166.px, rot = angle + item.animate.time / 3.0)
+    if item.joy.time > 3.0:
+      circle(20):
+        shoot(flowerBullet, item.entity, item.pos.x, item.pos.y + 166.px, rot = angle + item.animate.time / 3.0, speed = 0.07)
       
       item.joy.time = 0
 
-sys("fearBoss", [Pos, Fear, Animate]):
+sys("fearBoss", [Pos, Fear, Animate, Health]):
   all:
     item.fear.time += fau.delta
-    if item.fear.time > 0.25:
-      circle(3):
-        shoot(shadowBullet, item.entity, item.pos.x + 4.px, item.pos.y + 139.px, rot = angle + item.animate.time / 3.0)
-      #
-      item.fear.time = 0
+    if item.health.amount <= 10:
+      if not item.fear.rage: effectFlash(0, 0)
+      item.fear.rage = true
 
-      if chance(0.1):
-        discard newEntityWith(Pos(x: item.pos.x + rand(-1..1), y: item.pos.y + 1 + rand(-1..1)), Vel(), Hit(w: 16.px, h: 16.px, y: 3.px), Solid(), Health(amount: 2), Animate(), Eye(), Enemy())
+    
+    if item.fear.rage:
+      if item.fear.time > 0.15:
+        circle(20):
+          shoot(shadowBullet, item.entity, item.pos.x + 4.px, item.pos.y + 139.px, rot = angle + item.animate.time / 3.0)
+        item.fear.time = 0
+    else:
+      if item.fear.time > 0.25:
+        circle(3):
+          shoot(shadowBullet, item.entity, item.pos.x + 4.px, item.pos.y + 139.px, rot = angle + item.animate.time / 3.0)
+        
+        item.fear.time = 0
+
+        if chance(0.1):
+          discard newEntityWith(Pos(x: item.pos.x + rand(-1..1), y: item.pos.y + 1 + rand(-1..1)), Vel(), Hit(w: 16.px, h: 16.px, y: 3.px), Solid(), Health(amount: 2), Animate(), Eye(), Enemy())
 
 makeTimedSystem()
 
 sys("followCam", [Pos, Input]):
   all:
-    fau.cam.pos = vec2(item.pos.x, item.pos.y + 32.px)
+    fau.cam.pos = vec2(item.pos.x, item.pos.y + 42.px)
     fau.cam.pos += vec2((fau.widthf mod scl) / scl, (fau.heightf mod scl) / scl) * fau.pixelScl
 
 sys("playerHealth", [Person, Input, Health]):
@@ -455,7 +475,7 @@ sys("drawRat", [Rat, Pos]):
 sys("drawFear", [Fear, Pos, Animate, Health]):
   all:
     let si = item.animate.time.sin(2, 15.px).abs
-    draw(frame("fear", item.animate.time, 4).patch, item.pos.x, item.pos.y - 6.px, align = daBot, z = -item.pos.y, mixColor = rgba(1, 1, 1, 0).mix(colorWhite, item.health.hit))
+    draw(frame("fear" & (if item.fear.rage: "f" else: ""), item.animate.time, 4).patch, item.pos.x, item.pos.y - 6.px, align = daBot, z = -item.pos.y, mixColor = rgba(1, 1, 1, 0).mix(colorWhite, item.health.hit))
 
 sys("drawJoy", [Joy, Pos, Animate, Health]):
   all:
