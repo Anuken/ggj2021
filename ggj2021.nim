@@ -4,7 +4,7 @@ static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
 const 
   scl = 64.0
-  worldSize = 100
+  worldSize = 40
   tileSizePx = 32'f32
   pixelation = 2
   layerFloor = -10000000'f32
@@ -30,14 +30,26 @@ registerComponents(defaultComponentOptions):
       x, y: float32
     Hit = object
       w, h: float32
+      x, y: float32
     Person = object
       flip: bool
       walk: float32
       shoot: float32
     Input = object
     Solid = object
+    Damage = object
+      amount: float32
+    Health = object
+      amount: float32
     Bullet = object
-      shooter: EntityId
+      shooter: EntityRef
+    Anger = object
+    Sadness = object
+    Fear = object
+    Happiness = object
+    OnHit = object
+      entity: EntityRef
+    OnDead = object
 
 makeContent:
   air = Block()
@@ -46,13 +58,20 @@ makeContent:
 
 defineEffects:
   circleBullet:
-    #draw("player".patch, e.x, e.y, z = layerBloom)
-    fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0)
+    fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0, color = rgba(1.0, 0.5, 0.5))
+  
+  death(lifetime = 0.5):
+    particles(e.id, 10, e.x, e.y, 60.px * e.fin):
+      fillCircle(x, y, 5.px * e.fout, color = rgba(1, 0, 0))
+  
+  hit(lifetime = 0.3):
+    particles(e.id, 6, e.x, e.y, 70.px * e.fin):
+      fillCircle(x, y, 3.px * e.fout, color = rgba(1, 1, 0))
 
 var tiles = newSeq[Tile](worldSize * worldSize)
 
 proc tile(x, y: int): Tile = 
-  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockFloor, wall: blockAir) else: tiles[x + y*worldSize]
+  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockFloor, wall: blockWall) else: tiles[x + y*worldSize]
 
 proc solid(x, y: int): bool = tile(x, y).wall.solid
 
@@ -72,28 +91,30 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
       
       yield (wcx, wcy, tile(wcx, wcy))
 
-template bullet(aid: EffectId, xp, yp: float32, rot: float32 = 0, col: Color = colorWhite) =
-  let vel = vec2l(rot, 0.3)
-  discard newEntityWith(Pos(x: xp, y: yp), Timed(lifetime: 4), Effect(id: aid, rotation: rot, color: col), Bullet(), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y))
-
-macro shoot(t: untyped, xp, yp, rot: float32) =
+macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, damage = 1'f32) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
   result = quote do:
     let vel = vec2l(`rot`, 0.1)
-    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y))
+    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
+
+template rect(pos: untyped, hit: untyped): Rect = rectCenter(pos.x + hit.x, pos.y + hit.y, hit.w, hit.h)
 
 sys("init", [Main]):
 
   init:
     initContent()
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.4, h: 0.4), Solid(), Input())
+    #player
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.4, h: 0.4), Solid(), Input(), Health(amount: 5))
+    #anger
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5))
+
     fau.pixelScl = 1.0 / tileSizePx
 
     for tile in tiles.mitems:
       tile.floor = blockFloor
       tile.wall = blockAir
 
-      if rand(10) < 1: tile.wall = blockWall
+      #if rand(10) < 1: tile.wall = blockWall
   
 sys("controlled", [Person, Input, Pos, Vel]):
   all:
@@ -105,7 +126,7 @@ sys("controlled", [Person, Input, Pos, Vel]):
     if keyMouseLeft.down:
       if item.person.shoot <= 0:
         let offset = shootPos * vec2(-item.person.flip.sign, 1) + item.pos.vec2
-        shoot(circleBullet, offset.x, offset.y, rot = offset.angle(mouseWorld()))
+        shoot(circleBullet, item.entity, offset.x, offset.y, rot = offset.angle(mouseWorld()))
         item.person.shoot = reload
 
 sys("animate", [Vel, Person]):
@@ -118,7 +139,7 @@ sys("animate", [Vel, Person]):
     else:
       item.person.walk = 0
 
-sys("quadtree", [Pos, Vel, Bullet, Hit]):
+sys("quadtree", [Pos, Vel, Hit]):
   vars:
     tree: Quadtree[QuadRef]
   init:
@@ -126,7 +147,40 @@ sys("quadtree", [Pos, Vel, Bullet, Hit]):
   start:
     sys.tree.clear()
   all:
-    sys.tree.insert(QuadRef(entity: item.entity, x: item.pos.x - item.hit.w/2.0, y: item.pos.y - item.hit.h/2.0, w: item.hit.w, h: item.hit.h))
+    sys.tree.insert(QuadRef(entity: item.entity, x: item.pos.x - item.hit.w/2.0 + item.hit.x, y: item.pos.y - item.hit.h/2.0 + item.hit.y, w: item.hit.w, h: item.hit.h))
+
+#TODO only 1 collision per frame
+sys("collide", [Pos, Vel, Bullet, Hit]):
+  vars:
+    output: seq[QuadRef]
+  all:
+    sys.output.setLen(0)
+    let r = rect(item.pos, item.hit)
+    sysQuadtree.tree.intersect(r, sys.output)
+    for elem in sys.output:
+      if elem.entity != item.bullet.shooter and elem.entity != item.entity and elem.entity.valid and elem.entity.hasComponent Health:
+        elem.entity.addOrUpdate OnHit(entity: item.entity)
+        
+        break
+
+#TODO only 1 hit per frame, bad handling
+sys("healthHit", [Health, OnHit]):
+  all:
+    if item.onHit.entity.hasComponent Damage:
+      item.health.amount -= item.onHit.entity.fetchComponent(Damage).amount
+      let pos = item.onHit.entity.fetchComponent Pos
+      effectHit(pos.x, pos.y)
+      if item.health.amount <= 0:
+        item.entity.addOrUpdate OnDead()
+      item.onHit.entity.delete()
+    
+    item.entity.removeComponent OnHit
+
+#TODO only 1 per frame
+sys("kill", [Health, OnDead, Pos]):
+  all:
+    effectDeath(item.pos.x, item.pos.y)
+    item.entity.delete()
 
 sys("bulletMove", [Pos, Vel, Bullet]):
   all:
@@ -135,12 +189,12 @@ sys("bulletMove", [Pos, Vel, Bullet]):
 
 sys("bulletHitWall", [Pos, Vel, Bullet, Hit]):
   all:
-    if collidesTiles(rectCenter(item.pos.x, item.pos.y, item.hit.w, item.hit.h), proc(x, y: int): bool = solid(x, y)):
+    if collidesTiles(rect(item.pos, item.hit), proc(x, y: int): bool = solid(x, y)):
       item.entity.delete()
 
 sys("moveSolid", [Pos, Vel, Solid, Hit]):
   all:
-    let delta = moveDelta(rectCenter(item.pos.x, item.pos.y, item.hit.w, item.hit.h), item.vel.x, item.vel.y, proc(x, y: int): bool = solid(x, y))
+    let delta = moveDelta(rect(item.pos, item.hit), item.vel.x, item.vel.y, proc(x, y: int): bool = solid(x, y))
     item.pos.x += delta.x
     item.pos.y += delta.y
     item.vel.x = 0
@@ -187,12 +241,40 @@ sys("draw", [Main]):
         let reg = t.wall.name.patch
         draw(reg, x, y - 0.5, -(y - 0.5), align = daBot)
 
-sys("drawPerson", [Person, Pos]):
+sys("drawAnger", [Anger, Pos]):
   all:
+    draw("anger1".patch, item.pos.x, item.pos.y, align = daBot, z = -item.pos.y)
+
+sys("drawPerson", [Person, Pos]):
+  vars:
+    shader: Shader
+  init:
+    sys.shader = newShader(defaultBatchVert, 
+    """
+    varying lowp vec4 v_color;
+    varying lowp vec4 v_mixcolor;
+    varying vec2 v_texc;
+    uniform sampler2D u_texture;
+    void main(){
+      vec4 c = texture2D(u_texture, v_texc);
+      gl_FragColor = v_color * mix(c, vec4(v_mixcolor.rgb, c.a), v_mixcolor.a);
+    }
+    """)
+  all:
+    
     var p = if keyMouseLeft.down: "player_attack_1".patch else: "player".patch
     if item.person.walk > 0:
       p = ((if keyMouseLeft.down: "player_attack_" else: "player_walk_") & $(((item.person.walk * 6) mod 4) + 1).int).patch
-    draw(p, item.pos.x, item.pos.y - 4.px, z = -item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign)
+    let
+      x = item.pos.x
+      y = item.pos.y - 4.px
+      width = p.widthf.px * -item.person.flip.sign
+      shader = sys.shader
+    draw(-item.pos.y, proc() =
+      withShader(shader):
+        draw(p, x, y, align = daBot, width = width)
+    )
+    
 
 makeEffectsSystem()
 

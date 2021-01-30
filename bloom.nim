@@ -153,7 +153,12 @@ proc render*(bloom: Bloom) =
     bloom.p2.blitQuad(bloom.blur)
     bloom.p1.pop()
   
+  
   blendNormal.use()
-
   bloom.p1.texture.use(1)
-  bloom.buffer.blitQuad(bloom.bloom)
+  bloom.p1.blitQuad(bloom.bloom)
+  
+  #blendNormal.use()
+  #bloom.p1.texture.use(1)
+  #bloom.buffer.blitQuad(bloom.bloom)
+  
