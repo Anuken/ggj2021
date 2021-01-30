@@ -51,6 +51,8 @@ registerComponents(defaultComponentOptions):
     Eye = object
       time: float32
     Enemy = object
+    Rat = object
+      flip: bool
 
     
     Animate = object
@@ -174,6 +176,10 @@ sys("init", [Main]):
     #fear
     discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
 
+    #RAT
+    for i in 0..200:
+      let rad = 10.0'f32
+      discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 50), Animate(), Enemy())
 
     #effectRatText(worldSize/2, worldSize/2 + 4)
 
@@ -290,6 +296,13 @@ sys("eye", [Pos, Eye, Solid, Hit, Vel, Animate]):
       
       item.eye.time = 0
 
+sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
+  all:
+    let move = vec2(sin(item.pos.y + item.pos.x / 10.0, 4, 2.0), sin(item.pos.x + item.pos.y / 30.0, 5.0, 3.0)).nor * 0.01
+    item.vel.x += move.x
+    item.vel.y += move.y
+    item.rat.flip = move.x < 0.0
+
 sys("joyBoss", [Pos, Joy, Animate]):
   all:
     item.joy.time += fau.delta
@@ -383,6 +396,10 @@ proc frame(pre: string, time, speed: float32): string = pre & $([1, 2, 3, 2][((t
 sys("drawEye", [Eye, Pos, Animate]):
   all:
     draw(frame("eye", item.animate.time, 4).patch, item.pos.x, item.pos.y + 5.px, align = daBot, z = -item.pos.y)
+
+sys("drawRat", [Rat, Pos]):
+  all:
+    draw("rat".patch, item.pos.x, item.pos.y - 4.px, align = daBot, z = -item.pos.y, width = "rat".patch.widthf.px * item.rat.flip.sign)
 
 sys("drawFear", [Fear, Pos, Animate]):
   all:
