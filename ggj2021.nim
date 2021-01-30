@@ -46,6 +46,7 @@ registerComponents(defaultComponentOptions):
       amount: float32
     Health = object
       amount: float32
+      hit: float32
     Bullet = object
       shooter: EntityRef
       hitEffect: EffectId
@@ -81,6 +82,8 @@ makeContent:
   fencer = Block(solid: true)
   grass = Block()
   darkgrass = Block()
+  graygrass = Block()
+  tile = Block()
 
 var font: Font
 
@@ -132,7 +135,7 @@ defineEffects:
 var tiles = newSeq[Tile](worldSize * worldSize)
 
 proc tile(x, y: int): Tile = 
-  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockDarkgrass, wall: blockAir) else: tiles[x + y*worldSize]
+  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockGrass, wall: blockAir) else: tiles[x + y*worldSize]
 
 proc setWall(x, y: int, wall: Block) = tiles[x + y*worldSize].wall = wall
 
@@ -195,7 +198,7 @@ sys("init", [Main]):
     #effectRatText(worldSize/2, worldSize/2 + 4)
 
     for tile in tiles.mitems:
-      tile.floor = blockDarkgrass
+      tile.floor = blockGrass
       tile.wall = blockAir
     
     for i in 0..<worldSize:
@@ -259,6 +262,7 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
         whenComp(hitter, Damage):
           whenComp(target, Health):
             health.amount -= damage.amount
+            health.hit = 1'f32
 
             let pos = hitter.fetchComponent Pos
             if target.hasComponent Fear: effectFearHit(pos.x, pos.y)
@@ -297,6 +301,11 @@ sys("moveSolid", [Pos, Vel, Solid, Hit]):
     item.vel.x = 0
     item.vel.y = 0
 
+sys("healthHitAnim", [Health]):
+  all:
+    item.health.hit -= fau.delta * 9
+    if item.health.hit < 0: item.health.hit = 0
+
 sys("animation", [Animate]):
   all:
     item.animate.time += fau.delta
@@ -334,14 +343,13 @@ sys("fearBoss", [Pos, Fear, Animate]):
   all:
     item.fear.time += fau.delta
     if item.fear.time > 0.25:
-      circle(12):
+      circle(3):
         shoot(shadowBullet, item.entity, item.pos.x + 4.px, item.pos.y + 139.px, rot = angle + item.animate.time / 3.0)
-      
+      #
       item.fear.time = 0
 
       if chance(0.1):
-        discard newEntityWith(Pos(x: item.pos.x + rand(-1..1), y: item.pos.y + 1 + rand(-1..1)), Vel(), Hit(w: 16.px, h: 16.px, y: 3.px), Solid(), Health(amount: 1), Animate(), Eye(), Enemy())
-
+        discard newEntityWith(Pos(x: item.pos.x + rand(-1..1), y: item.pos.y + 1 + rand(-1..1)), Vel(), Hit(w: 16.px, h: 16.px, y: 3.px), Solid(), Health(amount: 2), Animate(), Eye(), Enemy())
 
 makeTimedSystem()
 
@@ -418,8 +426,10 @@ sys("draw", [Main]):
       let 
         w = 300'f32
         h = 40'f32
-      fillRect(0, 0, w, h, color = rgba(0, 0, 0, 1))
-      fillRect(0, 0, w * healthf / playerHealth, h, color = rgba(1, 0, 0, 1))
+        pad = 8'f32
+      fillRect(0, 0, w + pad*2, h + pad*2, color = %"382b8f")
+      fillRect(pad, pad, w, h, color = rgba(0, 0, 0, 1))
+      fillRect(pad, pad, w * healthf / playerHealth, h, color = rgba(1, 0, 0, 1))
     )
 
     #drawLayer(layerBloom, proc() = bloom.capture(), proc() = bloom.render())
@@ -434,33 +444,33 @@ sys("draw", [Main]):
 
 proc frame(pre: string, time, speed: float32): string = pre & $([1, 2, 3, 2][((time * speed) mod 4).int])
 
-sys("drawEye", [Eye, Pos, Animate]):
+sys("drawEye", [Eye, Pos, Animate, Health]):
   all:
-    draw(frame("eye", item.animate.time, 4).patch, item.pos.x, item.pos.y + 5.px, align = daBot, z = -item.pos.y)
+    draw(frame("eye", item.animate.time, 4).patch, item.pos.x, item.pos.y + 5.px, align = daBot, z = -item.pos.y, mixColor = rgba(1, 1, 1, 0).mix(colorWhite, item.health.hit))
 
 sys("drawRat", [Rat, Pos]):
   all:
     draw("rat".patch, item.pos.x, item.pos.y - 4.px, align = daBot, z = -item.pos.y, width = "rat".patch.widthf.px * item.rat.flip.sign)
 
-sys("drawFear", [Fear, Pos, Animate]):
+sys("drawFear", [Fear, Pos, Animate, Health]):
   all:
     let si = item.animate.time.sin(2, 15.px).abs
-    draw(frame("fear", item.animate.time, 4).patch, item.pos.x, item.pos.y - 6.px, align = daBot, z = -item.pos.y)
+    draw(frame("fear", item.animate.time, 4).patch, item.pos.x, item.pos.y - 6.px, align = daBot, z = -item.pos.y, mixColor = rgba(1, 1, 1, 0).mix(colorWhite, item.health.hit))
 
-sys("drawJoy", [Joy, Pos, Animate]):
+sys("drawJoy", [Joy, Pos, Animate, Health]):
   all:
-    draw(frame("joy", item.animate.time, 5).patch, item.pos.x, item.pos.y - 6.px, align = daBot, z = -item.pos.y)
+    draw(frame("joy", item.animate.time, 5).patch, item.pos.x, item.pos.y - 6.px, align = daBot, z = -item.pos.y, mixColor = rgba(1, 1, 1, 0).mix(colorWhite, item.health.hit))
 
 sys("drawShadow", [Pos, Solid, Hit]):
   all:
     draw("circle".patch, item.pos.x, item.pos.y - 3.px, z = layerShadow, width = item.hit.w * 1.8'f32, height = 10.px + item.hit.w / 6.0)
 
-sys("drawPerson", [Person, Pos]):
+sys("drawPerson", [Person, Pos, Health]):
   all:
     var p = if keyMouseLeft.down: "player_attack_1".patch else: "player".patch
     if item.person.walk > 0:
       p = frame((if keyMouseLeft.down: "player_attack_" else: "player_walk_"), item.person.walk, 6).patch
-    draw(p, item.pos.x, item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign, z = -item.pos.y)
+    draw(p, item.pos.x, item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign, z = -item.pos.y, mixColor = rgba(1, 1, 1, 0).mix(colorWhite, item.health.hit))
 
 makeEffectsSystem()
 
