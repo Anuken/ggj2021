@@ -1,4 +1,4 @@
-import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils, bloom
+import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils, bloom, sequtils
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
 
@@ -11,10 +11,13 @@ const
   shootPos = vec2(13, 30) / tileSizePx
   reload = 0.2
   layerBloom = 10'f32
+  shadowColor = rgba(0, 0, 0, 0.2)
+  layerShadow = layerFloor + 100
 
 type
   Block = ref object of Content
     solid: bool
+    patches: seq[Patch]
 
   Tile = object
     floor: Block
@@ -35,6 +38,7 @@ registerComponents(defaultComponentOptions):
       flip: bool
       walk: float32
       shoot: float32
+    DrawShadow = object
     Input = object
     Solid = object
     Damage = object
@@ -60,6 +64,7 @@ makeContent:
   air = Block()
   floor = Block()
   wall = Block(solid: true)
+  grass = Block()
 
 defineEffects:
   circleBullet:
@@ -104,19 +109,26 @@ macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, damage = 1'f32) =
 
 template rect(pos: untyped, hit: untyped): Rect = rectCenter(pos.x + hit.x, pos.y + hit.y, hit.w, hit.h)
 
+macro whenComp(entity: EntityRef, t: typedesc, body: untyped) =
+  let varName = t.repr.toLowerAscii.ident
+  result = quote do:
+    if `entity`.alive and `entity`.hasComponent `t`:
+      let `varName` {.inject.} = `entity`.fetchComponent `t`
+      `body`
+
 sys("init", [Main]):
 
   init:
     initContent()
     #player
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.4, h: 0.4), Solid(), Input(), Health(amount: 5))
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.6, h: 0.4), Solid(), Input(), Health(amount: 5))
     #anger
     discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5))
 
     fau.pixelScl = 1.0 / tileSizePx
 
     for tile in tiles.mitems:
-      tile.floor = blockFloor
+      tile.floor = blockGrass
       tile.wall = blockAir
 
       #if rand(10) < 1: tile.wall = blockWall
@@ -163,29 +175,24 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
     let r = rect(item.pos, item.hit)
     sysQuadtree.tree.intersect(r, sys.output)
     for elem in sys.output:
-      if elem.entity != item.bullet.shooter and elem.entity != item.entity and elem.entity.valid and elem.entity.hasComponent Health:
-        elem.entity.addOrUpdate OnHit(entity: item.entity)
+      if elem.entity != item.bullet.shooter and elem.entity != item.entity and elem.entity.valid:
+        let 
+          hitter = item.entity
+          target = elem.entity
         
-        break
+        whenComp(hitter, Damage):
+          whenComp(target, Health):
+            health.amount -= damage.amount
 
-#TODO only 1 hit per frame, bad handling
-sys("healthHit", [Health, OnHit]):
-  all:
-    if item.onHit.entity.hasComponent Damage:
-      item.health.amount -= item.onHit.entity.fetchComponent(Damage).amount
-      let pos = item.onHit.entity.fetchComponent Pos
-      effectHit(pos.x, pos.y)
-      if item.health.amount <= 0:
-        item.entity.addOrUpdate OnDead()
-      item.onHit.entity.delete()
-    
-    item.entity.removeComponent OnHit
+            let pos = hitter.fetchComponent Pos
+            effectHit(pos.x, pos.y)
 
-#TODO only 1 per frame
-sys("kill", [Health, OnDead, Pos]):
-  all:
-    effectDeath(item.pos.x, item.pos.y)
-    item.entity.delete()
+            if health.amount <= 0:
+              let tpos = target.fetchComponent Pos
+              effectDeath(tpos.x, tpos.y)
+              target.delete()
+            hitter.delete()
+            break
 
 sys("bulletMove", [Pos, Vel, Bullet]):
   all:
@@ -224,10 +231,26 @@ sys("followCam", [Pos, Input]):
 sys("draw", [Main]):
   vars:
     buffer: Framebuffer
+    shadows: Framebuffer
     #bloom: Bloom
   init:
     sys.buffer = newFramebuffer()
+    sys.shadows = newFramebuffer()
     #sys.bloom = newBloom()
+
+    #load all block textures before rendering
+    for b in blockList:
+      var maxFound = 0
+      for i in 1..12:
+        if not fau.atlas.patches.hasKey(b.name & $i): break
+        maxFound = i
+      
+      if maxFound == 0:
+        if fau.atlas.patches.hasKey(b.name):
+          b.patches = @[b.name.patch]
+      else:
+        b.patches = (1..maxFound).toSeq().mapIt((b.name & $it).patch)
+    
   start:
     if keyEscape.tapped: quitApp()
     
@@ -235,8 +258,10 @@ sys("draw", [Main]):
     fau.cam.use()
 
     sys.buffer.resize(fau.width div pixelation, fau.height div pixelation)
+    sys.shadows.resize(sys.buffer.width, sys.buffer.height)
     let 
       buf = sys.buffer
+      shadows = sys.shadows
       #bloom = sys.bloom
 
     buf.push()
@@ -246,10 +271,16 @@ sys("draw", [Main]):
       buf.blitQuad()
     )
 
+    drawLayer(layerShadow, proc() = shadows.push(colorClear), proc() =
+      shadows.pop()
+      shadows.blit(color = shadowColor)
+    )
+
     #drawLayer(layerBloom, proc() = bloom.capture(), proc() = bloom.render())
 
     for x, y, t in eachTile():
-      draw(t.floor.name.patch, x, y, layerFloor)
+      let r = hashInt(x + y * worldSize)
+      draw(t.floor.patches[r mod t.floor.patches.len], x, y, layerFloor)
        
       if t.wall.id != 0:
         let reg = t.wall.name.patch
@@ -258,6 +289,10 @@ sys("draw", [Main]):
 sys("drawAnger", [Anger, Pos]):
   all:
     draw("anger1".patch, item.pos.x, item.pos.y, align = daBot, z = -item.pos.y)
+
+sys("drawShadow", [Pos, Solid, Hit]):
+  all:
+    draw("circle".patch, item.pos.x, item.pos.y - 3.px, z = layerShadow, width = item.hit.w * 1.8'f32, height = 10.px + item.hit.w / 6.0)
 
 sys("drawPerson", [Person, Pos]):
   vars:
