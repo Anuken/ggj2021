@@ -71,6 +71,8 @@ makeContent:
   wall = Block(solid: true)
   grass = Block()
 
+var font: Font
+
 defineEffects:
   playerBullet:
     fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0, color = %"f3a0e1")
@@ -94,13 +96,24 @@ defineEffects:
   hit(lifetime = 0.3):
     particles(e.id, 6, e.x, e.y, 70.px * e.fin):
       fillCircle(x, y, 3.px * e.fout, color = %"fff236")
+
+  fearHit(lifetime = 0.3):
+    particles(e.id, 6, e.x, e.y, 70.px * e.fin):
+      fillCircle(x, y, 3.px * e.fout, color = %"ff55ff")
   
   flowerBullet:
     fillCircle(e.x, e.y, 10.px, z = layerBloom, color = %"f8cc55")
     fillCircle(e.x, e.y, 5.px, z = layerBloom, color = %"fff236")
   
+  shadowBullet:
+    fillCircle(e.x, e.y, 10.px, z = layerBloom, color = %"ff55ff")
+    fillCircle(e.x, e.y, 5.px, z = layerBloom, color = %"ffc0ff")
+
   shoot(lifetime = 0.2):
     poly(e.x, e.y, 10, 13.px * e.fin, stroke = 4.px * e.fout + 0.3.px, color = %"f3a0e1")
+  
+  ratText(lifetime = 20):
+    font.draw("RAT", e.vec2, z = layerBloom, scale = 3.px)
 
 var tiles = newSeq[Tile](worldSize * worldSize)
 
@@ -146,14 +159,17 @@ sys("init", [Main]):
     initContent()
     #player
     discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.6, h: 0.4), Solid(), Input(), Health(amount: 5))
+
     #anger
     #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
 
     #joy
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
+    #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
 
     #fear
-    #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate())
+
+    #effectRatText(worldSize/2, worldSize/2 + 4)
 
     fau.pixelScl = 1.0 / tileSizePx
 
@@ -218,7 +234,8 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
             health.amount -= damage.amount
 
             let pos = hitter.fetchComponent Pos
-            effectHit(pos.x, pos.y)
+            if target.hasComponent Fear: effectFearHit(pos.x, pos.y)
+            if target.hasComponent Joy: effectHit(pos.x, pos.y)
 
             if health.amount <= 0:
               let tpos = target.fetchComponent Pos
@@ -261,6 +278,15 @@ sys("joyBoss", [Pos, Joy, Animate]):
       
       item.joy.time = 0
 
+sys("fearBoss", [Pos, Fear, Animate]):
+  all:
+    item.fear.time += fau.delta
+    if item.fear.time > 0.25:
+      circle(12):
+        shoot(shadowBullet, item.entity, item.pos.x + 4.px, item.pos.y + 139.px, rot = angle + item.animate.time / 3.0)
+      
+      item.fear.time = 0
+
 makeTimedSystem()
 
 sys("followCam", [Pos, Input]):
@@ -276,6 +302,7 @@ sys("draw", [Main]):
   init:
     sys.buffer = newFramebuffer()
     sys.shadows = newFramebuffer()
+    font = loadFont("font.ttf")
     #sys.bloom = newBloom()
 
     #load all block textures before rendering
@@ -328,9 +355,10 @@ sys("draw", [Main]):
 
 proc frame(pre: string, time, speed: float32): string = pre & $([1, 2, 3, 2][((time * speed) mod 4).int])
 
-sys("drawAnger", [Anger, Pos]):
+sys("drawFear", [Fear, Pos, Animate]):
   all:
-    draw("anger1".patch, item.pos.x, item.pos.y, align = daBot, z = -item.pos.y)
+    let si = item.animate.time.sin(2, 15.px).abs
+    draw(frame("fear", item.animate.time, 4).patch, item.pos.x, item.pos.y - 6.px, align = daBot, z = -item.pos.y)
 
 sys("drawJoy", [Joy, Pos, Animate]):
   all:
