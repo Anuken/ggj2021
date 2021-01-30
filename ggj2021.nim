@@ -49,12 +49,15 @@ registerComponents(defaultComponentOptions):
       shooter: EntityRef
       hitEffect: EffectId
     
+    Animate = object
+      time: float32
+    
     #bosses
     Anger = object
       time: float32
     Sadness = object
     Fear = object
-    Happiness = object
+    Joy = object
     
     OnHit = object
       entity: EntityRef
@@ -123,7 +126,10 @@ sys("init", [Main]):
     #player
     discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.6, h: 0.4), Solid(), Input(), Health(amount: 5))
     #anger
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5))
+    #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
+
+    #joy
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
 
     fau.pixelScl = 1.0 / tileSizePx
 
@@ -146,7 +152,7 @@ sys("controlled", [Person, Input, Pos, Vel]):
         shoot(circleBullet, item.entity, offset.x, offset.y, rot = offset.angle(mouseWorld()))
         item.person.shoot = reload
 
-sys("animate", [Vel, Person]):
+sys("animatePerson", [Vel, Person]):
   all:
     if abs(item.vel.x) >= 0.001:
       item.person.flip = item.vel.x < 0
@@ -211,6 +217,10 @@ sys("moveSolid", [Pos, Vel, Solid, Hit]):
     item.pos.y += delta.y
     item.vel.x = 0
     item.vel.y = 0
+
+sys("animation", [Animate]):
+  all:
+    item.animate.time += fau.delta
 
 sys("angerBoss", [Pos, Anger]):
   all:
@@ -286,9 +296,15 @@ sys("draw", [Main]):
         let reg = t.wall.name.patch
         draw(reg, x, y - 0.5, -(y - 0.5), align = daBot)
 
+proc frame(pre: string, time, speed: float32): string = pre & $([1, 2, 3, 2][((time * speed) mod 4).int])
+
 sys("drawAnger", [Anger, Pos]):
   all:
     draw("anger1".patch, item.pos.x, item.pos.y, align = daBot, z = -item.pos.y)
+
+sys("drawJoy", [Joy, Pos, Animate]):
+  all:
+    draw(frame("joy", item.animate.time, 5).patch, item.pos.x, item.pos.y - 6.px, align = daBot, z = -item.pos.y)
 
 sys("drawShadow", [Pos, Solid, Hit]):
   all:
