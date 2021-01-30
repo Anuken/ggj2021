@@ -15,7 +15,7 @@ const
   layerShadow = layerFloor + 100
   playerHealth = 5
   layerCutscene = 300
-  maxRats = 5
+  maxRats = 3
 
 type
   Block = ref object of Content
@@ -92,6 +92,7 @@ makeContent:
 var font: Font
 var rats: int = 0
 var arena: bool
+var didIntro = false
 
 Animate.onAdd: curComponent.time = rand(0.0..1.0).float32
 Joy.onAdd: curComponent.time = rand(0.0..1.0).float32
@@ -157,9 +158,20 @@ defineEffects:
     #assume h<w
     let p = "win".patch
     let w = p.widthf / p.heightf * fau.cam.h
+    fillRect(fau.cam.pos.x - fau.cam.w/2.0, fau.cam.pos.y - fau.cam.h/2.0, fau.cam.w, fau.cam.h, z = layerCutscene, color = alpha(min(e.time, 1.0)))
     draw(p, fau.cam.pos.x, fau.cam.pos.y, height = fau.cam.h, width = w, z = layerCutscene, color = alpha(min(e.time, 1.0)))
-    fillRect(fau.cam.pos.x - fau.cam.w/2.0, fau.cam.pos.y - fau.cam.h/2.0, (fau.cam.w - w) / 2.0, fau. cam.h, z = layerCutscene)
-    fillRect(fau.cam.pos.x + w/2.0, fau.cam.pos.y - fau.cam.h/2.0, (fau.cam.w - w) / 2.0, fau. cam.h, z = layerCutscene)
+    
+  start(lifetime = 4):
+    #assume h<w
+    let p = "start".patch
+    let w = p.widthf / p.heightf * fau.cam.h
+    var a = 1.0
+    let l = 4'f32
+    if e.time > (l - 1):
+      a = l - e.time
+    
+    fillRect(fau.cam.pos.x - fau.cam.w/2.0, fau.cam.pos.y - fau.cam.h/2.0, fau.cam.w, fau.cam.h, z = layerCutscene, color = alpha(a))
+    draw(p, fau.cam.pos.x, fau.cam.pos.y, height = fau.cam.h, width = w, z = layerCutscene, color = alpha(a))
 
   flash(lifetime = 1):
     draw(fau.white, fau.cam.pos.x, fau.cam.pos.y, width = fau.cam.w, height = fau.cam.h, color = rgba(e.color.r, e.color.g, e.color.b, e.fout))
@@ -231,9 +243,10 @@ template reset() =
   let 
     inSize = 10
     cx = worldSize div 2
+    corw = 17
   
   arena = false
-  fences(0, inSize * 2, worldSize - 1, worldSize - 1 - inSize * 2)
+  fences(worldSize div 2 - corw, inSize * 2, corw * 2, worldSize - 1 - inSize * 2)
   fences(cx - inSize, 0, inSize * 2, inSize * 2)
 
   for i in 1..<inSize*2:
@@ -244,27 +257,21 @@ template reset() =
   #player
   discard newEntityWith(Pos(x: worldSize/2, y: 4), Person(), Vel(), Hit(w: 0.72, h: 1, y: 0.7), Solid(), Input(), Health(amount: playerHealth))
 
-  #anger
-  #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
-
-  #joy
-  #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
-
-  #fear
-  #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
-
   rats = 0
 
   #RAT
-  for pos in [vec2(29, 15), vec2(6, 28), vec2(27, 56), vec2(36, 37), vec2(22, 43)]:
+  for pos in [vec2(29, 15), vec2(30, 38), vec2(24, 56)]:
     discard newEntityWith(Pos(x: pos.x, y: pos.y), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
     
   #flowers
-  for pos in [vec2(24, 32), vec2(9, 47), vec2(42, 43), vec2(53, 31)]:
+  for pos in [vec2(34, 29), vec2(18, 53)]:
     discard newEntityWith(Pos(x: pos.x, y: pos.y), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 10), Animate(), Enemy())
 
   #makeArena()
-  #effectRatText(worldSize/2, worldSize/2 + 4)
+
+  if not didIntro:
+    effectStart(0, 0)
+    didIntro = true
 
 template fences(x, y: int, w, h: int, base = blockFence, left = blockFencel, right = blockFencer) =
   for i in 0..<w:
@@ -381,7 +388,7 @@ sys("bulletHitWall", [Pos, Vel, Bullet, Hit]):
 
 sys("moveSolid", [Pos, Vel, Solid, Hit]):
   all:
-    let delta = moveDelta(rect(item.pos, item.hit), item.vel.x, item.vel.y, proc(x, y: int): bool = solid(x, y))
+    let delta = moveDelta(rectCenter(item.pos.x, item.pos.y, 0.4, 0.2), item.vel.x, item.vel.y, proc(x, y: int): bool = solid(x, y))
     item.pos.x += delta.x
     item.pos.y += delta.y
     item.vel.x = 0
