@@ -176,34 +176,43 @@ macro whenComp(entity: EntityRef, t: typedesc, body: untyped) =
       let `varName` {.inject.} = `entity`.fetchComponent `t`
       `body`
 
+template reset() =
+  let len = sysAll.groups.len
+  while sysAll.groups.len > 0:
+    let item = sysAll.groups[0]
+    if item.entity.alive: item.entity.delete()
+
+  #player
+  discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.75, h: 1.4, y: 0.7), Solid(), Input(), Health(amount: playerHealth))
+
+  #anger
+  #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
+
+  #joy
+  #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
+
+  #fear
+  discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
+
+  #RAT
+  for i in 0..1:
+    let rad = 10.0'f32
+    discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
+    
+  for i in 0..3:
+    let rad = 10.0'f32
+    discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 10), Animate(), Enemy())
+
+  #effectRatText(worldSize/2, worldSize/2 + 4)
+
 sys("init", [Main]):
 
   init:
     fau.pixelScl = 1.0 / tileSizePx
 
     initContent()
-    #player
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.75, h: 0.7, y: 0.35), Solid(), Input(), Health(amount: playerHealth))
 
-    #anger
-    #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
-
-    #joy
-    #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
-
-    #fear
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
-
-    #RAT
-    for i in 0..1:
-      let rad = 10.0'f32
-      discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
-      
-    for i in 0..3:
-      let rad = 10.0'f32
-      discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 10), Animate(), Enemy())
-
-    #effectRatText(worldSize/2, worldSize/2 + 4)
+    reset()
 
     for tile in tiles.mitems:
       tile.floor = blockGrass
@@ -215,8 +224,10 @@ sys("init", [Main]):
       setWall(worldSize - 1, i, blockFencel)
       setWall(0, i, blockFencer)
 
-      #if rand(10) < 1: tile.wall = blockWall
-  
+sys("all", [Pos]):
+  init:
+    discard
+
 sys("controlled", [Person, Input, Pos, Vel]):
   all:
     let v = vec2(axis(keyA, keyD), axis(KeyCode.keyS, keyW)).lim(1) * 6 * fau.delta
@@ -284,7 +295,11 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
 
               if target.hasComponent Joy: effectJoyDeath(tpos.x, tpos.y)
               if target.hasComponent Fear: effectFearDeath(tpos.x, tpos.y)
-              if target.hasComponent Person: effectDeath(tpos.x, tpos.y)
+              if target.hasComponent Person: 
+                effectDeath(tpos.x, tpos.y)
+                reset()
+                effectFlash(0, 0, life = 1.2)
+                break
               else: effectDeath(tpos.x, tpos.y)
 
               target.delete()
@@ -352,7 +367,7 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
   all:
     item.fear.time += fau.delta
     if item.health.amount <= 10:
-      if not item.fear.rage: effectFlash(0, 0)
+      if not item.fear.rage: effectFlash(0, 0, col = %"ffc0ff")
       item.fear.rage = true
 
     
