@@ -48,6 +48,10 @@ registerComponents(defaultComponentOptions):
     Bullet = object
       shooter: EntityRef
       hitEffect: EffectId
+    Eye = object
+      time: float32
+    Enemy = object
+
     
     Animate = object
       time: float32
@@ -84,9 +88,8 @@ defineEffects:
       fillCircle(x, y, 8.px * e.fout, color = %"fff236")
   
   death(lifetime = 1.0):
-    draw("joy1".patch, e.x, e.y, color = rgba(1, 1, 1, e.fout), z = -e.y, align = daBot)
     particles(e.id, 30, e.x, e.y, 90.px * e.fin):
-      fillCircle(x, y, 6.px * e.fout, color = %"fff236")
+      fillCircle(x, y, 6.px * e.fout, color = %"ff8da3")
   
   fearDeath(lifetime = 1.0):
     draw("fear1".patch, e.x, e.y, color = rgba(1, 1, 1, e.fout), z = -e.y, align = daBot)
@@ -156,6 +159,8 @@ macro whenComp(entity: EntityRef, t: typedesc, body: untyped) =
 sys("init", [Main]):
 
   init:
+    fau.pixelScl = 1.0 / tileSizePx
+
     initContent()
     #player
     discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.6, h: 0.4), Solid(), Input(), Health(amount: 5))
@@ -167,11 +172,14 @@ sys("init", [Main]):
     #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
 
     #fear
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate())
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
+
+    for i in 0..10:
+      #eye
+      discard newEntityWith(Pos(x: worldSize/2 + rand(-3..3), y: worldSize/2 - 3 + rand(-3..3)), Vel(), Hit(w: 15.px, h: 13.px, y: 3.px), Solid(), Health(amount: 4), Animate(), Eye(), Enemy())
 
     #effectRatText(worldSize/2, worldSize/2 + 4)
 
-    fau.pixelScl = 1.0 / tileSizePx
 
     for tile in tiles.mitems:
       tile.floor = blockGrass
@@ -224,7 +232,7 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
     let r = rect(item.pos, item.hit)
     sysQuadtree.tree.intersect(r, sys.output)
     for elem in sys.output:
-      if elem.entity != item.bullet.shooter and elem.entity != item.entity and elem.entity.valid:
+      if elem.entity != item.bullet.shooter and elem.entity != item.entity and elem.entity.alive and item.bullet.shooter.alive and not(elem.entity.hasComponent(Enemy) and item.bullet.shooter.hasComponent(Enemy)):
         let 
           hitter = item.entity
           target = elem.entity
@@ -235,13 +243,17 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
 
             let pos = hitter.fetchComponent Pos
             if target.hasComponent Fear: effectFearHit(pos.x, pos.y)
-            if target.hasComponent Joy: effectHit(pos.x, pos.y)
+            elif target.hasComponent Joy: effectHit(pos.x, pos.y)
+            elif target.hasComponent Person: effectHit(pos.x, pos.y)
+            else: effectHit(pos.x, pos.y)
 
             if health.amount <= 0:
               let tpos = target.fetchComponent Pos
 
               if target.hasComponent Joy: effectJoyDeath(tpos.x, tpos.y)
               if target.hasComponent Fear: effectFearDeath(tpos.x, tpos.y)
+              if target.hasComponent Person: effectDeath(tpos.x, tpos.y)
+              else: effectDeath(tpos.x, tpos.y)
 
               target.delete()
             hitter.delete()
@@ -268,6 +280,19 @@ sys("moveSolid", [Pos, Vel, Solid, Hit]):
 sys("animation", [Animate]):
   all:
     item.animate.time += fau.delta
+
+sys("eye", [Pos, Eye, Solid, Hit, Vel, Animate]):
+  all:
+    let move = vec2(sin(item.pos.y + item.pos.x / 10.0, 2.2, 2.0), sin(item.pos.x + item.pos.y / 30.0, 3.0, 3.0)).nor * 0.1
+    item.vel.x += move.x
+    item.vel.y += move.y
+
+    item.eye.time += fau.delta
+    if item.eye.time > 2.0:
+      circle(10):
+        shoot(shadowBullet, item.entity, item.pos.x, item.pos.y, rot = angle)
+      
+      item.eye.time = 0
 
 sys("joyBoss", [Pos, Joy, Animate]):
   all:
@@ -354,6 +379,10 @@ sys("draw", [Main]):
         draw(reg, x, y - 0.5, -(y - 0.5), align = daBot)
 
 proc frame(pre: string, time, speed: float32): string = pre & $([1, 2, 3, 2][((time * speed) mod 4).int])
+
+sys("drawEye", [Eye, Pos, Animate]):
+  all:
+    draw("eye1".patch, item.pos.x, item.pos.y + 5.px, align = daBot, z = -item.pos.y)
 
 sys("drawFear", [Fear, Pos, Animate]):
   all:
