@@ -13,6 +13,7 @@ const
   layerBloom = 10'f32
   shadowColor = rgba(0, 0, 0, 0.2)
   layerShadow = layerFloor + 100
+  playerHealth = 5
 
 type
   Block = ref object of Content
@@ -76,6 +77,8 @@ makeContent:
   floor = Block()
   wall = Block(solid: true)
   fence = Block(solid: true)
+  fencel = Block(solid: true)
+  fencer = Block(solid: true)
   grass = Block()
   darkgrass = Block()
 
@@ -116,6 +119,10 @@ defineEffects:
     fillCircle(e.x, e.y, 10.px, z = layerBloom, color = %"ff55ff")
     fillCircle(e.x, e.y, 5.px, z = layerBloom, color = %"ffc0ff")
 
+  eyeBullet:
+    fillCircle(e.x, e.y, 10.px, z = layerBloom, color = %"8c365d")
+    fillCircle(e.x, e.y, 5.px, z = layerBloom, color = %"cc95ae")
+
   shoot(lifetime = 0.2):
     poly(e.x, e.y, 10, 13.px * e.fin, stroke = 4.px * e.fout + 0.3.px, color = %"f3a0e1")
   
@@ -125,7 +132,9 @@ defineEffects:
 var tiles = newSeq[Tile](worldSize * worldSize)
 
 proc tile(x, y: int): Tile = 
-  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockDarkgrass, wall: blockFence) else: tiles[x + y*worldSize]
+  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockDarkgrass, wall: blockAir) else: tiles[x + y*worldSize]
+
+proc setWall(x, y: int, wall: Block) = tiles[x + y*worldSize].wall = wall
 
 proc solid(x, y: int): bool = tile(x, y).wall.solid
 
@@ -167,7 +176,7 @@ sys("init", [Main]):
 
     initContent()
     #player
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.6, h: 0.4), Solid(), Input(), Health(amount: 5))
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.6, h: 0.4), Solid(), Input(), Health(amount: playerHealth))
 
     #anger
     #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
@@ -176,18 +185,24 @@ sys("init", [Main]):
     #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
 
     #fear
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 2), Animate(), Enemy())
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
 
     #RAT
-    for i in 0..200:
+    for i in 0..1:
       let rad = 10.0'f32
-      discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 50), Animate(), Enemy())
+      discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
 
     #effectRatText(worldSize/2, worldSize/2 + 4)
 
     for tile in tiles.mitems:
       tile.floor = blockDarkgrass
       tile.wall = blockAir
+    
+    for i in 0..<worldSize:
+      setWall(i, 0, blockFence)
+      setWall(i, worldSize - 1, blockFence)
+      setWall(worldSize - 1, i, blockFencel)
+      setWall(0, i, blockFencer)
 
       #if rand(10) < 1: tile.wall = blockWall
   
@@ -271,6 +286,7 @@ sys("bulletMove", [Pos, Vel, Bullet]):
 sys("bulletHitWall", [Pos, Vel, Bullet, Hit]):
   all:
     if collidesTiles(rect(item.pos, item.hit), proc(x, y: int): bool = solid(x, y)):
+      effectFearHit(item.pos.x, item.pos.y)
       item.entity.delete()
 
 sys("moveSolid", [Pos, Vel, Solid, Hit]):
@@ -294,7 +310,7 @@ sys("eye", [Pos, Eye, Solid, Hit, Vel, Animate]):
     item.eye.time += fau.delta
     if item.eye.time > 2.0:
       circle(4):
-        shoot(shadowBullet, item.entity, item.pos.x, item.pos.y, rot = angle)
+        shoot(eyeBullet, item.entity, item.pos.x, item.pos.y, rot = angle)
       
       item.eye.time = 0
 
@@ -334,10 +350,19 @@ sys("followCam", [Pos, Input]):
     fau.cam.pos = vec2(item.pos.x, item.pos.y + 32.px)
     fau.cam.pos += vec2((fau.widthf mod scl) / scl, (fau.heightf mod scl) / scl) * fau.pixelScl
 
+sys("playerHealth", [Person, Input, Health]):
+  vars:
+    health: float32
+  start:
+    if sys.groups.len == 0: sys.health = 0
+  all:
+    sys.health = item.health.amount
+
 sys("draw", [Main]):
   vars:
     buffer: Framebuffer
     shadows: Framebuffer
+    healthf: float32
     #bloom: Bloom
   init:
     sys.buffer = newFramebuffer()
@@ -383,6 +408,20 @@ sys("draw", [Main]):
       shadows.blit(color = shadowColor)
     )
 
+    sys.healthf = sys.healthf.lerp(sysPlayerHealth.health, 0.1)
+    let healthf = sys.healthf
+
+    #ui
+    draw(200, proc() =
+      drawMat ortho(0, 0, fau.width, fau.height)
+
+      let 
+        w = 300'f32
+        h = 40'f32
+      fillRect(0, 0, w, h, color = rgba(0, 0, 0, 1))
+      fillRect(0, 0, w * healthf / playerHealth, h, color = rgba(1, 0, 0, 1))
+    )
+
     #drawLayer(layerBloom, proc() = bloom.capture(), proc() = bloom.render())
 
     for x, y, t in eachTile():
@@ -417,35 +456,11 @@ sys("drawShadow", [Pos, Solid, Hit]):
     draw("circle".patch, item.pos.x, item.pos.y - 3.px, z = layerShadow, width = item.hit.w * 1.8'f32, height = 10.px + item.hit.w / 6.0)
 
 sys("drawPerson", [Person, Pos]):
-  vars:
-    shader: Shader
-  init:
-    sys.shader = newShader(defaultBatchVert, 
-    """
-    varying lowp vec4 v_color;
-    varying lowp vec4 v_mixcolor;
-    varying vec2 v_texc;
-    uniform sampler2D u_texture;
-    void main(){
-      vec4 c = texture2D(u_texture, v_texc);
-      gl_FragColor = v_color * mix(c, vec4(v_mixcolor.rgb, c.a), v_mixcolor.a);
-    }
-    """)
   all:
-    
     var p = if keyMouseLeft.down: "player_attack_1".patch else: "player".patch
     if item.person.walk > 0:
       p = frame((if keyMouseLeft.down: "player_attack_" else: "player_walk_"), item.person.walk, 6).patch
-    let
-      x = item.pos.x
-      y = item.pos.y - 4.px
-      width = p.widthf.px * -item.person.flip.sign
-      shader = sys.shader
-    draw(-item.pos.y, proc() =
-      withShader(shader):
-        draw(p, x, y, align = daBot, width = width)
-    )
-    
+    draw(p, item.pos.x, item.pos.y, align = daBot, width = p.widthf.px * -item.person.flip.sign, z = -item.pos.y)
 
 makeEffectsSystem()
 
