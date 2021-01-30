@@ -1,6 +1,6 @@
 import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils, bloom, sequtils
 
-static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas")
+static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas --max:2048")
 
 const 
   scl = 64.0
@@ -14,6 +14,7 @@ const
   shadowColor = rgba(0, 0, 0, 0.2)
   layerShadow = layerFloor + 100
   playerHealth = 5
+  layerCutscene = 300
 
 type
   Block = ref object of Content
@@ -56,7 +57,6 @@ registerComponents(defaultComponentOptions):
     Rat = object
       flip: bool
 
-    
     Animate = object
       time: float32
     
@@ -87,16 +87,21 @@ makeContent:
   tile = Block()
 
 var font: Font
+var rats: int = 0
 
 defineEffects:
   playerBullet:
-    fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0, color = %"f3a0e1")
-    fillPoly(e.x, e.y, 4, 5.px, z = layerBloom, rotation = e.fin * 360.0, color = colorWhite)
+    fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0.rad, color = %"f3a0e1")
+    fillPoly(e.x, e.y, 4, 5.px, z = layerBloom, rotation = e.fin * 360.0.rad, color = colorWhite)
   
   joyDeath(lifetime = 1.0):
     draw("joy1".patch, e.x, e.y, color = rgba(1, 1, 1, e.fout), z = -e.y, align = daBot)
     particles(e.id, 30, e.x, e.y, 90.px * e.fin):
       fillCircle(x, y, 8.px * e.fout, color = %"fff236")
+    
+  ratPoof(lifetime = 0.7):
+    particles(e.id, 20, e.x, e.y, 90.px * e.fin):
+      fillCircle(x, y, 7.px * e.fout, color = %"815796")
   
   death(lifetime = 1.0):
     particles(e.id, 30, e.x, e.y, 90.px * e.fin):
@@ -123,6 +128,9 @@ defineEffects:
     fillCircle(e.x, e.y, 10.px, z = layerBloom, color = %"ff55ff")
     fillCircle(e.x, e.y, 5.px, z = layerBloom, color = %"ffc0ff")
 
+  bolt:
+    draw("bolt".patch, e.x, e.y, rotation = e.rotation + 45.rad)
+
   eyeBullet:
     fillCircle(e.x, e.y, 10.px, z = layerBloom, color = %"8c365d")
     fillCircle(e.x, e.y, 5.px, z = layerBloom, color = %"cc95ae")
@@ -130,8 +138,13 @@ defineEffects:
   shoot(lifetime = 0.2):
     poly(e.x, e.y, 10, 13.px * e.fin, stroke = 4.px * e.fout + 0.3.px, color = %"f3a0e1")
   
-  ratText(lifetime = 20):
-    font.draw("RAT", e.vec2, z = layerBloom, scale = 3.px)
+  ratGet(lifetime = 3):
+    let p = "rat_grab".patch
+    var a = 1'f32
+    let l = 3'f32
+    if e.time > (l - 1):
+      a = l - e.time
+    draw(p, fau.cam.pos.x, fau.cam.pos.y - fau.cam.h + fau.cam.h * min(e.fin.powout(2) * 6.0, 1.0), height = fau.cam.h, width = p.widthf / p.heightf * fau.cam.h, color = alpha(a), z = layerCutscene)
   
   flash(lifetime = 1):
     draw(fau.white, fau.cam.pos.x, fau.cam.pos.y, width = fau.cam.w, height = fau.cam.h, color = rgba(e.color.r, e.color.g, e.color.b, e.fout))
@@ -183,7 +196,7 @@ template reset() =
     if item.entity.alive: item.entity.delete()
 
   #player
-  discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.75, h: 1.4, y: 0.7), Solid(), Input(), Health(amount: playerHealth))
+  discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.72, h: 1, y: 0.7), Solid(), Input(), Health(amount: playerHealth))
 
   #anger
   #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
@@ -193,6 +206,8 @@ template reset() =
 
   #fear
   discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
+
+  rats = 0
 
   #RAT
   for i in 0..1:
@@ -347,12 +362,28 @@ sys("eye", [Pos, Eye, Solid, Hit, Vel, Animate]):
       
       item.eye.time = 0
 
+sys("player", [Person, Input, Health, Pos]):
+  vars:
+    health: float32
+    pos: Vec2
+  start:
+    if sys.groups.len == 0: sys.health = 0
+  all:
+    sys.health = item.health.amount
+    sys.pos = item.pos.vec2
+
 sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
   all:
     let move = vec2(sin(item.pos.y + item.pos.x / 10.0, 4, 2.0), sin(item.pos.x + item.pos.y / 30.0, 5.0, 3.0)).nor * 0.01
     item.vel.x += move.x
     item.vel.y += move.y
     item.rat.flip = move.x < 0.0
+
+    if item.pos.vec2.within(sysPlayer.pos, 0.6):
+      effectRatGet(item.pos.x, item.pos.y)
+      effectRatPoof(item.pos.x, item.pos.y)
+      item.entity.delete()
+      rats.inc
 
 sys("joyBoss", [Pos, Joy, Animate]):
   all:
@@ -392,14 +423,6 @@ sys("followCam", [Pos, Input]):
   all:
     fau.cam.pos = vec2(item.pos.x, item.pos.y + 42.px)
     fau.cam.pos += vec2((fau.widthf mod scl) / scl, (fau.heightf mod scl) / scl) * fau.pixelScl
-
-sys("playerHealth", [Person, Input, Health]):
-  vars:
-    health: float32
-  start:
-    if sys.groups.len == 0: sys.health = 0
-  all:
-    sys.health = item.health.amount
 
 sys("draw", [Main]):
   vars:
@@ -451,7 +474,7 @@ sys("draw", [Main]):
       shadows.blit(color = shadowColor)
     )
 
-    sys.healthf = sys.healthf.lerp(sysPlayerHealth.health, 0.1)
+    sys.healthf = sys.healthf.lerp(sysPlayer.health, 0.1)
     let healthf = sys.healthf
 
     #ui
@@ -465,6 +488,8 @@ sys("draw", [Main]):
       fillRect(0, 0, w + pad*2, h + pad*2, color = %"382b8f")
       fillRect(pad, pad, w, h, color = rgba(0, 0, 0, 1))
       fillRect(pad, pad, w * healthf / playerHealth, h, color = rgba(1, 0, 0, 1))
+
+      fau.cam.use()
     )
 
     #drawLayer(layerBloom, proc() = bloom.capture(), proc() = bloom.render())
