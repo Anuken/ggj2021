@@ -82,13 +82,16 @@ makeContent:
   fence = Block(solid: true)
   fencel = Block(solid: true)
   fencer = Block(solid: true)
+  darkfence = Block(solid: true)
+  darkfencel = Block(solid: true)
+  darkfencer = Block(solid: true)
   grass = Block()
   darkgrass = Block()
-  graygrass = Block()
   tile = Block()
 
 var font: Font
 var rats: int = 0
+var arena: bool
 
 Animate.onAdd: curComponent.time = rand(0.0..1.0).float32
 Joy.onAdd: curComponent.time = rand(0.0..1.0).float32
@@ -156,7 +159,7 @@ defineEffects:
 var tiles = newSeq[Tile](worldSize * worldSize)
 
 proc tile(x, y: int): Tile = 
-  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockGrass, wall: blockAir) else: tiles[x + y*worldSize]
+  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: if not arena: blockGrass else: blockDarkgrass, wall: blockAir) else: tiles[x + y*worldSize]
 
 proc setWall(x, y: int, wall: Block) = tiles[x + y*worldSize].wall = wall
 
@@ -193,11 +196,42 @@ macro whenComp(entity: EntityRef, t: typedesc, body: untyped) =
       let `varName` {.inject.} = `entity`.fetchComponent `t`
       `body`
 
-template reset() =
-  let len = sysAll.groups.len
-  while sysAll.groups.len > 0:
-    let item = sysAll.groups[0]
+template clearAll(group: untyped) =
+  while group.groups.len > 0:
+    let item = group.groups[0]
     if item.entity.alive: item.entity.delete()
+
+template makeArena() =
+  for tile in tiles.mitems:
+    tile.floor = blockDarkGrass
+    tile.wall = blockAir
+  
+  fences(0, 0, worldSize - 1, worldSize - 1, blockDarkfence, blockDarkfencel, blockDarkfencer)
+  arena = true
+
+  clearAll(sysJoyBoss)
+  clearAll(sysBulletMove)
+
+  #spawn boss
+  discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
+
+template reset() =
+  for tile in tiles.mitems:
+    tile.floor = blockGrass
+    tile.wall = blockAir
+    
+  let 
+    inSize = 10
+    cx = worldSize div 2
+  
+  arena = false
+  fences(0, inSize * 2, worldSize - 1, worldSize - 1 - inSize * 2)
+  fences(cx - inSize, 0, inSize * 2, inSize * 2)
+
+  for i in 1..<inSize*2:
+    setWall(cx - inSize + i, inSize*2, blockAir)
+
+  clearAll(sysAll)
 
   #player
   discard newEntityWith(Pos(x: worldSize/2, y: 4), Person(), Vel(), Hit(w: 0.72, h: 1, y: 0.7), Solid(), Input(), Health(amount: playerHealth))
@@ -215,23 +249,24 @@ template reset() =
 
   #RAT
   for i in 0..<maxRats:
-    let rad = 11.0'f32
+    let rad = 8.0'f32
     discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
     
   for i in 0..3:
-    let rad = 11.0'f32
+    let rad = 8.0'f32
     discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 10), Animate(), Enemy())
 
+  #makeArena()
   #effectRatText(worldSize/2, worldSize/2 + 4)
 
-template fences(x, y: int, w, h: int) =
+template fences(x, y: int, w, h: int, base = blockFence, left = blockFencel, right = blockFencer) =
   for i in 0..<w:
-    setWall(x + i, y, blockFence)
-    setWall(x + i, y + h, blockFence)
+    setWall(x + i, y, base)
+    setWall(x + i, y + h, base)
   
   for i in 0..<h:
-    setWall(x + w, i + y, blockFencel)
-    setWall(x, i + y, blockFencer)
+    setWall(x + w, i + y, left)
+    setWall(x, i + y, right)
 
 sys("init", [Main]):
 
@@ -241,20 +276,6 @@ sys("init", [Main]):
     initContent()
 
     reset()
-
-    for tile in tiles.mitems:
-      tile.floor = blockGrass
-      tile.wall = blockAir
-    
-    let 
-      inSize = 10
-      cx = worldSize div 2
-    
-    fences(0, inSize * 2, worldSize - 1, worldSize - 1 - inSize * 2)
-    fences(cx - inSize, 0, inSize * 2, inSize * 2)
-
-    for i in 1..<inSize*2:
-      setWall(cx - inSize + i, inSize*2, blockAir)
 
 sys("all", [Pos]):
   init:
@@ -297,7 +318,6 @@ sys("quadtree", [Pos, Vel, Hit]):
   all:
     sys.tree.insert(QuadRef(entity: item.entity, x: item.pos.x - item.hit.w/2.0 + item.hit.x, y: item.pos.y - item.hit.h/2.0 + item.hit.y, w: item.hit.w, h: item.hit.h))
 
-#TODO only 1 collision per frame
 sys("collide", [Pos, Vel, Bullet, Hit]):
   vars:
     output: seq[QuadRef]
@@ -306,7 +326,7 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
     let r = rect(item.pos, item.hit)
     sysQuadtree.tree.intersect(r, sys.output)
     for elem in sys.output:
-      if elem.entity != item.bullet.shooter and elem.entity != item.entity and elem.entity.alive and item.bullet.shooter.alive and not(elem.entity.hasComponent(Enemy) and item.bullet.shooter.hasComponent(Enemy)):
+      if elem.entity != item.bullet.shooter and elem.entity != item.entity and elem.entity.alive and item.bullet.shooter.alive and not(elem.entity.hasComponent(Enemy) and item.bullet.shooter.hasComponent(Enemy)) and not elem.entity.hasComponent Rat:
         let 
           hitter = item.entity
           target = elem.entity
@@ -326,8 +346,10 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
               let tpos = target.fetchComponent Pos
 
               if target.hasComponent Joy: effectJoyDeath(tpos.x, tpos.y)
-              if target.hasComponent Fear: effectFearDeath(tpos.x, tpos.y)
-              if target.hasComponent Person: 
+              elif target.hasComponent Fear: 
+                effectFearDeath(tpos.x, tpos.y)
+                rats.inc
+              elif target.hasComponent Person: 
                 effectDeath(tpos.x, tpos.y)
                 reset()
                 effectFlash(0, 0, life = 1.2)
@@ -383,11 +405,13 @@ sys("player", [Person, Input, Health, Pos]):
   vars:
     health: float32
     pos: Vec2
+    cur: EntityRef
   start:
     if sys.groups.len == 0: sys.health = 0
   all:
     sys.health = item.health.amount
     sys.pos = item.pos.vec2
+    sys.cur = item.entity
 
 sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
   all:
@@ -397,10 +421,18 @@ sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
     item.rat.flip = move.x < 0.0
 
     if item.pos.vec2.within(sysPlayer.pos, 0.6):
-      effectRatGet(item.pos.x, item.pos.y)
-      effectRatPoof(item.pos.x, item.pos.y)
-      item.entity.delete()
-      rats.inc
+      if rats != maxRats - 1:
+        effectRatGet(item.pos.x, item.pos.y)
+        effectRatPoof(item.pos.x, item.pos.y)
+        item.entity.delete()
+        rats.inc
+      else:
+        effectFlash(0, 0, col = colorBlack, life = 3)
+        makeArena()
+        if sysPlayer.cur.alive:
+          let pos = sysPlayer.cur.fetchComponent Pos
+          pos.x = worldSize / 2.0
+          pos.y = worldSize / 2.0 - 10
 
 sys("joyBoss", [Pos, Joy, Animate]):
   all:
@@ -432,7 +464,7 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
         item.fear.time = 0
 
         if chance(0.1):
-          discard newEntityWith(Pos(x: item.pos.x + rand(-1..1), y: item.pos.y + 1 + rand(-1..1)), Vel(), Hit(w: 16.px, h: 16.px, y: 3.px), Solid(), Health(amount: 2), Animate(), Eye(), Enemy())
+          discard newEntityWith(Pos(x: item.pos.x + rand(-1..1), y: item.pos.y + 1 + rand(-1..1)), Vel(), Hit(w: 24.px, h: 24.px, y: 12.px), Solid(), Health(amount: 2), Animate(), Eye(), Enemy())
 
 makeTimedSystem()
 
