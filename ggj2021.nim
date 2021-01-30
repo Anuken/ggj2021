@@ -4,7 +4,7 @@ static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas --max:204
 
 const 
   scl = 64.0
-  worldSize = 40
+  worldSize = 60
   tileSizePx = 32'f32
   pixelation = 2
   layerFloor = -10000000'f32
@@ -15,6 +15,7 @@ const
   layerShadow = layerFloor + 100
   playerHealth = 5
   layerCutscene = 300
+  maxRats = 5
 
 type
   Block = ref object of Content
@@ -88,6 +89,9 @@ makeContent:
 
 var font: Font
 var rats: int = 0
+
+Animate.onAdd: curComponent.time = rand(0.0..1.0).float32
+Joy.onAdd: curComponent.time = rand(0.0..1.0).float32
 
 defineEffects:
   playerBullet:
@@ -196,7 +200,7 @@ template reset() =
     if item.entity.alive: item.entity.delete()
 
   #player
-  discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2), Person(), Vel(), Hit(w: 0.72, h: 1, y: 0.7), Solid(), Input(), Health(amount: playerHealth))
+  discard newEntityWith(Pos(x: worldSize/2, y: 4), Person(), Vel(), Hit(w: 0.72, h: 1, y: 0.7), Solid(), Input(), Health(amount: playerHealth))
 
   #anger
   #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
@@ -205,20 +209,29 @@ template reset() =
   #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
 
   #fear
-  discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
+  #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
 
   rats = 0
 
   #RAT
-  for i in 0..1:
-    let rad = 10.0'f32
+  for i in 0..<maxRats:
+    let rad = 11.0'f32
     discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
     
   for i in 0..3:
-    let rad = 10.0'f32
+    let rad = 11.0'f32
     discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 10), Animate(), Enemy())
 
   #effectRatText(worldSize/2, worldSize/2 + 4)
+
+template fences(x, y: int, w, h: int) =
+  for i in 0..<w:
+    setWall(x + i, y, blockFence)
+    setWall(x + i, y + h, blockFence)
+  
+  for i in 0..<h:
+    setWall(x + w, i + y, blockFencel)
+    setWall(x, i + y, blockFencer)
 
 sys("init", [Main]):
 
@@ -233,11 +246,15 @@ sys("init", [Main]):
       tile.floor = blockGrass
       tile.wall = blockAir
     
-    for i in 0..<worldSize:
-      setWall(i, 0, blockFence)
-      setWall(i, worldSize - 1, blockFence)
-      setWall(worldSize - 1, i, blockFencel)
-      setWall(0, i, blockFencer)
+    let 
+      inSize = 10
+      cx = worldSize div 2
+    
+    fences(0, inSize * 2, worldSize - 1, worldSize - 1 - inSize * 2)
+    fences(cx - inSize, 0, inSize * 2, inSize * 2)
+
+    for i in 1..<inSize*2:
+      setWall(cx - inSize + i, inSize*2, blockAir)
 
 sys("all", [Pos]):
   init:
@@ -488,6 +505,7 @@ sys("draw", [Main]):
       fillRect(0, 0, w + pad*2, h + pad*2, color = %"382b8f")
       fillRect(pad, pad, w, h, color = rgba(0, 0, 0, 1))
       fillRect(pad, pad, w * healthf / playerHealth, h, color = rgba(1, 0, 0, 1))
+      font.draw("Rats: " & $rats & "/" & $maxRats, vec2(fau.widthf / 2.0, fau.heightf), align = faBot, scale = 5.0, color = colorBlack)
 
       fau.cam.use()
     )
