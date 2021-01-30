@@ -72,11 +72,22 @@ makeContent:
   grass = Block()
 
 defineEffects:
-  circleBullet:
-    fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0, color = rgba(1.0, 0.5, 0.5))
+  playerBullet:
+    fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0, color = %"f3a0e1")
+    fillPoly(e.x, e.y, 4, 5.px, z = layerBloom, rotation = e.fin * 360.0, color = colorWhite)
+  
+  joyDeath(lifetime = 1.0):
+    draw("joy1".patch, e.x, e.y, color = rgba(1, 1, 1, e.fout), z = -e.y, align = daBot)
+    particles(e.id, 30, e.x, e.y, 90.px * e.fin):
+      fillCircle(x, y, 8.px * e.fout, color = %"fff236")
   
   death(lifetime = 1.0):
     draw("joy1".patch, e.x, e.y, color = rgba(1, 1, 1, e.fout), z = -e.y, align = daBot)
+    particles(e.id, 30, e.x, e.y, 90.px * e.fin):
+      fillCircle(x, y, 6.px * e.fout, color = %"fff236")
+  
+  fearDeath(lifetime = 1.0):
+    draw("fear1".patch, e.x, e.y, color = rgba(1, 1, 1, e.fout), z = -e.y, align = daBot)
     particles(e.id, 30, e.x, e.y, 90.px * e.fin):
       fillCircle(x, y, 6.px * e.fout, color = %"fff236")
   
@@ -87,6 +98,9 @@ defineEffects:
   flowerBullet:
     fillCircle(e.x, e.y, 10.px, z = layerBloom, color = %"f8cc55")
     fillCircle(e.x, e.y, 5.px, z = layerBloom, color = %"fff236")
+  
+  shoot(lifetime = 0.2):
+    poly(e.x, e.y, 10, 13.px * e.fin, stroke = 4.px * e.fout + 0.3.px, color = %"f3a0e1")
 
 var tiles = newSeq[Tile](worldSize * worldSize)
 
@@ -111,10 +125,10 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
       
       yield (wcx, wcy, tile(wcx, wcy))
 
-macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, damage = 1'f32) =
+macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1'f32) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
   result = quote do:
-    let vel = vec2l(`rot`, 0.1)
+    let vel = vec2l(`rot`, `speed`)
     discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`, hitEffect: effectIdHit), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
 
 template rect(pos: untyped, hit: untyped): Rect = rectCenter(pos.x + hit.x, pos.y + hit.y, hit.w, hit.h)
@@ -136,7 +150,7 @@ sys("init", [Main]):
     #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
 
     #joy
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 50), Animate())
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
 
     #fear
     #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
@@ -159,8 +173,11 @@ sys("controlled", [Person, Input, Pos, Vel]):
     if keyMouseLeft.down:
       if item.person.shoot <= 0:
         let offset = shootPos * vec2(-item.person.flip.sign, 1) + item.pos.vec2
-        shoot(circleBullet, item.entity, offset.x, offset.y, rot = offset.angle(mouseWorld()))
+        let ang = offset.angle(mouseWorld())
+        shoot(playerBullet, item.entity, offset.x, offset.y, rot = ang, speed = 0.3)
         item.person.shoot = reload
+        effectShoot(offset.x, offset.y)
+        item.person.flip = ang >= 90.rad and ang < 270.rad
 
 sys("animatePerson", [Vel, Person]):
   all:
@@ -205,7 +222,10 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
 
             if health.amount <= 0:
               let tpos = target.fetchComponent Pos
-              effectDeath(tpos.x, tpos.y)
+
+              if target.hasComponent Joy: effectJoyDeath(tpos.x, tpos.y)
+              if target.hasComponent Fear: effectFearDeath(tpos.x, tpos.y)
+
               target.delete()
             hitter.delete()
             break
