@@ -153,6 +153,14 @@ defineEffects:
       a = l - e.time
     draw(p, fau.cam.pos.x, fau.cam.pos.y - fau.cam.h + fau.cam.h * min(e.fin.powout(2) * 6.0, 1.0), height = fau.cam.h, width = p.widthf / p.heightf * fau.cam.h, color = alpha(a), z = layerCutscene)
   
+  win(lifetime = 999999):
+    #assume h<w
+    let p = "win".patch
+    let w = p.widthf / p.heightf * fau.cam.h
+    draw(p, fau.cam.pos.x, fau.cam.pos.y, height = fau.cam.h, width = w, z = layerCutscene, color = alpha(min(e.time, 1.0)))
+    fillRect(fau.cam.pos.x - fau.cam.w/2.0, fau.cam.pos.y - fau.cam.h/2.0, (fau.cam.w - w) / 2.0, fau. cam.h, z = layerCutscene)
+    fillRect(fau.cam.pos.x + w/2.0, fau.cam.pos.y - fau.cam.h/2.0, (fau.cam.w - w) / 2.0, fau. cam.h, z = layerCutscene)
+
   flash(lifetime = 1):
     draw(fau.white, fau.cam.pos.x, fau.cam.pos.y, width = fau.cam.w, height = fau.cam.h, color = rgba(e.color.r, e.color.g, e.color.b, e.fout))
 
@@ -248,13 +256,12 @@ template reset() =
   rats = 0
 
   #RAT
-  for i in 0..<maxRats:
-    let rad = 8.0'f32
-    discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
+  for pos in [vec2(29, 15), vec2(6, 28), vec2(27, 56), vec2(36, 37), vec2(22, 43)]:
+    discard newEntityWith(Pos(x: pos.x, y: pos.y), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
     
-  for i in 0..3:
-    let rad = 8.0'f32
-    discard newEntityWith(Pos(x: worldSize/2 + rand(-rad..rad), y: worldSize/2 + rand(-rad..rad)), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 10), Animate(), Enemy())
+  #flowers
+  for pos in [vec2(24, 32), vec2(9, 47), vec2(42, 43), vec2(53, 31)]:
+    discard newEntityWith(Pos(x: pos.x, y: pos.y), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 10), Animate(), Enemy())
 
   #makeArena()
   #effectRatText(worldSize/2, worldSize/2 + 4)
@@ -349,6 +356,7 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
               elif target.hasComponent Fear: 
                 effectFearDeath(tpos.x, tpos.y)
                 rats.inc
+                effectWin(0, 0)
               elif target.hasComponent Person: 
                 effectDeath(tpos.x, tpos.y)
                 reset()
@@ -415,7 +423,7 @@ sys("player", [Person, Input, Health, Pos]):
 
 sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
   all:
-    let move = vec2(sin(item.pos.y + item.pos.x / 10.0, 4, 2.0), sin(item.pos.x + item.pos.y / 30.0, 5.0, 3.0)).nor * 0.01
+    let move = vec2(sin(item.pos.y + item.pos.x / 10.0, 4, 2.0), sin(item.pos.x + item.pos.y / 30.0, 5.0, 3.0)).nor * 0.01 * 0.4
     item.vel.x += move.x
     item.vel.y += move.y
     item.rat.flip = move.x < 0.0
@@ -433,6 +441,7 @@ sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
           let pos = sysPlayer.cur.fetchComponent Pos
           pos.x = worldSize / 2.0
           pos.y = worldSize / 2.0 - 10
+          item.entity.delete()
 
 sys("joyBoss", [Pos, Joy, Animate]):
   all:
@@ -537,7 +546,8 @@ sys("draw", [Main]):
       fillRect(0, 0, w + pad*2, h + pad*2, color = %"382b8f")
       fillRect(pad, pad, w, h, color = rgba(0, 0, 0, 1))
       fillRect(pad, pad, w * healthf / playerHealth, h, color = rgba(1, 0, 0, 1))
-      font.draw("Rats: " & $rats & "/" & $maxRats, vec2(fau.widthf / 2.0, fau.heightf), align = faBot, scale = 5.0, color = colorBlack)
+      #font.draw("Rats: " & $rats & "/" & $maxRats, vec2(fau.widthf / 2.0, fau.heightf), align = faBot, scale = 5.0, color = colorBlack)
+      font.draw("xy: " & $mouseWorld().x.int & ", " & $mouseWorld().y.int, vec2(fau.widthf / 2.0, fau.heightf), align = faBot, scale = 5.0, color = colorBlack)
 
       fau.cam.use()
     )
