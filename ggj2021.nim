@@ -57,7 +57,9 @@ registerComponents(defaultComponentOptions):
       time: float32
     Sadness = object
     Fear = object
+      time: float32
     Joy = object
+      time: float32
     
     OnHit = object
       entity: EntityRef
@@ -73,13 +75,18 @@ defineEffects:
   circleBullet:
     fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0, color = rgba(1.0, 0.5, 0.5))
   
-  death(lifetime = 0.5):
-    particles(e.id, 10, e.x, e.y, 60.px * e.fin):
-      fillCircle(x, y, 5.px * e.fout, color = rgba(1, 0, 0))
+  death(lifetime = 1.0):
+    draw("joy1".patch, e.x, e.y, color = rgba(1, 1, 1, e.fout), z = -e.y, align = daBot)
+    particles(e.id, 30, e.x, e.y, 90.px * e.fin):
+      fillCircle(x, y, 6.px * e.fout, color = %"fff236")
   
   hit(lifetime = 0.3):
     particles(e.id, 6, e.x, e.y, 70.px * e.fin):
-      fillCircle(x, y, 3.px * e.fout, color = rgba(1, 1, 0))
+      fillCircle(x, y, 3.px * e.fout, color = %"fff236")
+  
+  flowerBullet:
+    fillCircle(e.x, e.y, 10.px, z = layerBloom, color = %"f8cc55")
+    fillCircle(e.x, e.y, 5.px, z = layerBloom, color = %"fff236")
 
 var tiles = newSeq[Tile](worldSize * worldSize)
 
@@ -129,7 +136,10 @@ sys("init", [Main]):
     #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Anger(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
 
     #joy
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 50), Animate())
+
+    #fear
+    #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 3, h: 8, y: 4), Solid(), Health(amount: 5), Animate())
 
     fau.pixelScl = 1.0 / tileSizePx
 
@@ -222,14 +232,14 @@ sys("animation", [Animate]):
   all:
     item.animate.time += fau.delta
 
-sys("angerBoss", [Pos, Anger]):
+sys("joyBoss", [Pos, Joy, Animate]):
   all:
-    item.anger.time += fau.delta
-    if item.anger.time > 1:
+    item.joy.time += fau.delta
+    if item.joy.time > 0.3:
       circle(10):
-        shoot(circleBullet, item.entity, item.pos.x, item.pos.y, rot = angle)
+        shoot(flowerBullet, item.entity, item.pos.x, item.pos.y + 166.px, rot = angle + item.animate.time / 3.0)
       
-      item.anger.time = 0
+      item.joy.time = 0
 
 makeTimedSystem()
 
@@ -329,7 +339,7 @@ sys("drawPerson", [Person, Pos]):
     
     var p = if keyMouseLeft.down: "player_attack_1".patch else: "player".patch
     if item.person.walk > 0:
-      p = ((if keyMouseLeft.down: "player_attack_" else: "player_walk_") & $(((item.person.walk * 6) mod 4) + 1).int).patch
+      p = frame((if keyMouseLeft.down: "player_attack_" else: "player_walk_"), item.person.walk, 6).patch
     let
       x = item.pos.x
       y = item.pos.y - 4.px
