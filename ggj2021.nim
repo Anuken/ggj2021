@@ -75,7 +75,9 @@ makeContent:
   air = Block()
   floor = Block()
   wall = Block(solid: true)
+  fence = Block(solid: true)
   grass = Block()
+  darkgrass = Block()
 
 var font: Font
 
@@ -123,7 +125,7 @@ defineEffects:
 var tiles = newSeq[Tile](worldSize * worldSize)
 
 proc tile(x, y: int): Tile = 
-  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockFloor, wall: blockWall) else: tiles[x + y*worldSize]
+  if x >= worldSize or y >= worldSize or x < 0 or y < 0: Tile(floor: blockDarkgrass, wall: blockFence) else: tiles[x + y*worldSize]
 
 proc solid(x, y: int): bool = tile(x, y).wall.solid
 
@@ -174,7 +176,7 @@ sys("init", [Main]):
     #discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 50), Animate())
 
     #fear
-    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
+    discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 2), Animate(), Enemy())
 
     #RAT
     for i in 0..200:
@@ -184,7 +186,7 @@ sys("init", [Main]):
     #effectRatText(worldSize/2, worldSize/2 + 4)
 
     for tile in tiles.mitems:
-      tile.floor = blockGrass
+      tile.floor = blockDarkgrass
       tile.wall = blockAir
 
       #if rand(10) < 1: tile.wall = blockWall
