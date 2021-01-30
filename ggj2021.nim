@@ -43,10 +43,15 @@ registerComponents(defaultComponentOptions):
       amount: float32
     Bullet = object
       shooter: EntityRef
+      hitEffect: EffectId
+    
+    #bosses
     Anger = object
+      time: float32
     Sadness = object
     Fear = object
     Happiness = object
+    
     OnHit = object
       entity: EntityRef
     OnDead = object
@@ -95,7 +100,7 @@ macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, damage = 1'f32) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
   result = quote do:
     let vel = vec2l(`rot`, 0.1)
-    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
+    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`, hitEffect: effectIdHit), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
 
 template rect(pos: untyped, hit: untyped): Rect = rectCenter(pos.x + hit.x, pos.y + hit.y, hit.w, hit.h)
 
@@ -199,6 +204,15 @@ sys("moveSolid", [Pos, Vel, Solid, Hit]):
     item.pos.y += delta.y
     item.vel.x = 0
     item.vel.y = 0
+
+sys("angerBoss", [Pos, Anger]):
+  all:
+    item.anger.time += fau.delta
+    if item.anger.time > 1:
+      circle(10):
+        shoot(circleBullet, item.entity, item.pos.x, item.pos.y, rot = angle)
+      
+      item.anger.time = 0
 
 makeTimedSystem()
 
