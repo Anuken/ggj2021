@@ -89,18 +89,21 @@ makeContent:
   darkgrass = Block()
   tile = Block()
 
-var font: Font
+when defined(debug): 
+  var font: Font
 var rats: int = 0
 var arena: bool
 var didIntro = false
+var showTime: float32
+var won = false
 
 Animate.onAdd: curComponent.time = rand(0.0..1.0).float32
 Joy.onAdd: curComponent.time = rand(0.0..1.0).float32
 
 defineEffects:
   playerBullet:
-    fillPoly(e.x, e.y, 4, 10.px, z = layerBloom, rotation = e.fin * 360.0.rad, color = %"f3a0e1")
-    fillPoly(e.x, e.y, 4, 5.px, z = layerBloom, rotation = e.fin * 360.0.rad, color = colorWhite)
+    fillCircle(e.x, e.y, 10.px, z = layerBloom, color = %"f3a0e1")
+    fillCircle(e.x, e.y, 5.px, z = layerBloom, color = colorWhite)
   
   joyDeath(lifetime = 1.0):
     draw("joy1".patch, e.x, e.y, color = rgba(1, 1, 1, e.fout), z = -e.y, align = daBot)
@@ -241,16 +244,18 @@ template reset() =
     tile.wall = blockAir
     
   let 
-    inSize = 10
+    inSize = 8
     cx = worldSize div 2
     corw = 17
   
   arena = false
-  fences(worldSize div 2 - corw, inSize * 2, corw * 2, worldSize - 1 - inSize * 2)
   fences(cx - inSize, 0, inSize * 2, inSize * 2)
+  fences(cx - inSize, worldSize - 1 - inSize * 2, inSize * 2, inSize * 2)
+  fences(worldSize div 2 - corw, inSize * 2, corw * 2, worldSize - 1 - inSize * 4)
 
   for i in 1..<inSize*2:
     setWall(cx - inSize + i, inSize*2, blockAir)
+    setWall(cx - inSize + i, worldSize - 1 - inSize*2, blockAir)
 
   clearAll(sysAll)
 
@@ -260,27 +265,28 @@ template reset() =
   rats = 0
 
   #RAT
-  for pos in [vec2(29, 15), vec2(30, 38), vec2(24, 56)]:
+  for pos in [vec2(29, 15), vec2(30, 38), vec2(26, 57)]:
     discard newEntityWith(Pos(x: pos.x, y: pos.y), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
     
   #flowers
-  for pos in [vec2(34, 29), vec2(18, 53)]:
-    discard newEntityWith(Pos(x: pos.x, y: pos.y), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 10), Animate(), Enemy())
+  for pos in [vec2(34, 29), vec2(25, 53)]:
+    discard newEntityWith(Pos(x: pos.x, y: pos.y), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 15), Animate(), Enemy())
 
   #makeArena()
 
   if not didIntro:
-    effectStart(0, 0)
+    when not defined(debug):
+      effectStart(0, 0)
     didIntro = true
 
 template fences(x, y: int, w, h: int, base = blockFence, left = blockFencel, right = blockFencer) =
-  for i in 0..<w:
-    setWall(x + i, y, base)
-    setWall(x + i, y + h, base)
-  
   for i in 0..<h:
     setWall(x + w, i + y, left)
     setWall(x, i + y, right)
+
+  for i in 1..<w:
+    setWall(x + i, y, base)
+    setWall(x + i, y + h, base)
 
 sys("init", [Main]):
 
@@ -290,6 +296,9 @@ sys("init", [Main]):
     initContent()
 
     reset()
+  start:
+    showTime += fau.delta
+    sysControlled.paused = won or showTime < 4
 
 sys("all", [Pos]):
   init:
@@ -363,6 +372,7 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
               elif target.hasComponent Fear: 
                 effectFearDeath(tpos.x, tpos.y)
                 rats.inc
+                won = true
                 effectWin(0, 0)
               elif target.hasComponent Person: 
                 effectDeath(tpos.x, tpos.y)
@@ -498,7 +508,7 @@ sys("draw", [Main]):
   init:
     sys.buffer = newFramebuffer()
     sys.shadows = newFramebuffer()
-    font = loadFont("font.ttf")
+    when defined(debug): font = loadFont("font.ttf")
     #sys.bloom = newBloom()
 
     #load all block textures before rendering
@@ -554,7 +564,7 @@ sys("draw", [Main]):
       fillRect(pad, pad, w, h, color = rgba(0, 0, 0, 1))
       fillRect(pad, pad, w * healthf / playerHealth, h, color = rgba(1, 0, 0, 1))
       #font.draw("Rats: " & $rats & "/" & $maxRats, vec2(fau.widthf / 2.0, fau.heightf), align = faBot, scale = 5.0, color = colorBlack)
-      font.draw("xy: " & $mouseWorld().x.int & ", " & $mouseWorld().y.int, vec2(fau.widthf / 2.0, fau.heightf), align = faBot, scale = 5.0, color = colorBlack)
+      when defined(debug): font.draw("xy: " & $mouseWorld().x.int & ", " & $mouseWorld().y.int, vec2(fau.widthf / 2.0, fau.heightf), align = faBot, scale = 5.0, color = colorBlack)
 
       fau.cam.use()
     )
