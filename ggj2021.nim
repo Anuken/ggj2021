@@ -121,10 +121,10 @@ defineEffects:
     particles(e.id, 30, e.x, e.y, 90.px * e.fin):
       fillCircle(x, y, 6.px * e.fout, color = %"ff8da3")
   
-  fearDeath(lifetime = 1.0):
-    draw("fear1".patch, e.x, e.y, color = rgba(1, 1, 1, e.fout), z = -e.y, align = daBot)
-    particles(e.id, 30, e.x, e.y, 90.px * e.fin):
-      fillCircle(x, y, 6.px * e.fout, color = %"fff236")
+  fearDeath(lifetime = 10000.0):
+    draw("fearsleep".patch, e.x, e.y - min(e.time.px * 3.0, 15.px), z = -e.y, align = daBot)
+
+    draw("circle".patch, e.x, e.y - 3.px, z = layerShadow, width = 3.6, height = 0.645)
   
   hit(lifetime = 0.3):
     particles(e.id, 6, e.x, e.y, 70.px * e.fin):
@@ -168,7 +168,7 @@ defineEffects:
     let p = "win".patch
     let w = p.widthf / p.heightf * fau.cam.h
     fillRect(fau.cam.pos.x - fau.cam.w/2.0, fau.cam.pos.y - fau.cam.h/2.0, fau.cam.w, fau.cam.h, z = layerCutscene, color = alpha(min(e.time, 1.0)))
-    draw(p, fau.cam.pos.x, fau.cam.pos.y, height = fau.cam.h, width = w, z = layerCutscene, color = alpha(min(e.time, 1.0)))
+    draw(p, fau.cam.pos.x, fau.cam.pos.y, height = fau.cam.h, width = w, z = layerCutscene + 1, color = alpha(min(e.time, 1.0)))
     
   start(lifetime = 4):
     #assume h<w
@@ -239,6 +239,8 @@ template makeArena() =
   arena = true
 
   clearAll(sysJoyBoss)
+  clearAll(sysFearBoss)
+  clearAll(sysRatmove)
   clearAll(sysBulletMove)
 
   #spawn boss
@@ -254,7 +256,6 @@ template reset() =
     cx = worldSize div 2
     corw = 17
   
-  arena = false
   fences(cx - inSize, 0, inSize * 2, inSize * 2)
   fences(cx - inSize, worldSize - 1 - inSize * 2, inSize * 2, inSize * 2)
   fences(worldSize div 2 - corw, inSize * 2, corw * 2, worldSize - 1 - inSize * 4)
@@ -285,6 +286,9 @@ template reset() =
     when not defined(debug):
       effectStart(0, 0)
     didIntro = true
+  
+  if arena:
+    makeArena()
 
 template fences(x, y: int, w, h: int, base = blockFence, left = blockFencel, right = blockFencer) =
   for i in 0..<h:
@@ -378,17 +382,32 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
                 effectFearDeath(tpos.x, tpos.y)
                 rats.inc
                 won = true
-                effectWin(0, 0)
-              elif target.hasComponent Person: 
+                effectFlash(0, 0, col = colorWhite)
+                
+                clearAll(sysBulletMove)
+                target.delete()
+                break
+              elif target.hasComponent Person:
                 effectDeath(tpos.x, tpos.y)
                 reset()
                 effectFlash(0, 0, life = 1.2)
+                target.delete()
                 break
               else: effectDeath(tpos.x, tpos.y)
 
               target.delete()
             hitter.delete()
             break
+
+sys("won", [Main]):
+  vars:
+    time: float32
+  start:
+    if won:
+      sys.time += fau.delta
+
+    if sys.time >= 5:
+      effectWin(0, 0)
 
 sys("bulletMove", [Pos, Vel, Bullet]):
   all:
@@ -530,7 +549,7 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
     case phase:
     of 1:
       every(0.3):
-        circle(6):
+        circle(4):
           bullet(shadowBullet, angle + item.animate.time / 4.0, -0.3 * (item.fear.f2.int mod 2 == 0).sign)
         item.fear.f2 += 1
     of 2:
@@ -544,15 +563,15 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
           bullet(shadowBullet, angle + item.fear.f1 / 1.3, 0.4, 0.09 + (item.fear.f2 mod 3) / 3 * 0.05)
         item.fear.f2 += 1
     of 3:
-      every 9, f1:
+      every 6, f1:
         var count = 0
         while sysEye.groups.len < 8 and count < 2: 
           makeEye(Follower)
           count.inc
-      every 0.5:
+      every 0.43:
         for i in 0..3:
           circle(3):
-            bullet(shadowBullet, angle + item.fear.global / 2.8 + i / 6.0, 1.0, 0.1 + i / 3.0 * 0.06)
+            bullet(shadowBullet, angle + item.fear.global / 2.5 + i / 6.0, 1.0, 0.1 + i / 3.0 * 0.06)
     of 5:
       every 11, f1:
         var count = 0
