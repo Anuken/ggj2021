@@ -1,4 +1,4 @@
-import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils, bloom, sequtils
+import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils, bloom, sequtils, hashes
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas --max:2048")
 
@@ -16,6 +16,7 @@ const
   playerHealth = 5
   layerCutscene = 300
   maxRats = 3
+  bossHealth = 300'f32
 
 type
   Block = ref object of Content
@@ -54,20 +55,20 @@ registerComponents(defaultComponentOptions):
       hitEffect: EffectId
     Eye = object
       time: float32
+      rot: float32
     Enemy = object
     Rat = object
       flip: bool
-
     Animate = object
       time: float32
     
-    #bosses
-    Anger = object
-      time: float32
-    Sadness = object
+    Follower = object
+
     Fear = object
+      global: float32
       time: float32
       rage: bool
+      f1, f2, f3, f4: float32
     Joy = object
       time: float32
     
@@ -236,7 +237,7 @@ template makeArena() =
   clearAll(sysBulletMove)
 
   #spawn boss
-  discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: 50), Animate(), Enemy())
+  discard newEntityWith(Pos(x: worldSize/2, y: worldSize/2 + 3), Fear(), Vel(), Hit(w: 2, h: 5.2, y: 3.5), Solid(), Health(amount: bossHealth), Animate(), Enemy())
 
 template reset() =
   for tile in tiles.mitems:
@@ -264,7 +265,7 @@ template reset() =
 
   rats = 0
 
-  #RAT
+  #rats
   for pos in [vec2(29, 15), vec2(30, 38), vec2(26, 57)]:
     discard newEntityWith(Pos(x: pos.x, y: pos.y), Rat(), Vel(), Hit(w: 13.px, h: 5.px), Solid(), Health(amount: 2), Animate(), Enemy())
     
@@ -272,7 +273,8 @@ template reset() =
   for pos in [vec2(34, 29), vec2(25, 53)]:
     discard newEntityWith(Pos(x: pos.x, y: pos.y), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 15), Animate(), Enemy())
 
-  #makeArena()
+  when defined(debug):
+    makeArena()
 
   if not didIntro:
     when not defined(debug):
@@ -298,7 +300,8 @@ sys("init", [Main]):
     reset()
   start:
     showTime += fau.delta
-    sysControlled.paused = won or showTime < 4
+    if not defined(debug):
+      sysControlled.paused = won or showTime < 4
 
 sys("all", [Pos]):
   init:
@@ -360,10 +363,7 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
             health.hit = 1'f32
 
             let pos = hitter.fetchComponent Pos
-            if target.hasComponent Fear: effectFearHit(pos.x, pos.y)
-            elif target.hasComponent Joy: effectHit(pos.x, pos.y)
-            elif target.hasComponent Person: effectHit(pos.x, pos.y)
-            else: effectHit(pos.x, pos.y)
+            effectFearHit(pos.x, pos.y)
 
             if health.amount <= 0:
               let tpos = target.fetchComponent Pos
@@ -413,18 +413,6 @@ sys("animation", [Animate]):
   all:
     item.animate.time += fau.delta
 
-sys("eye", [Pos, Eye, Solid, Hit, Vel, Animate]):
-  all:
-    let move = vec2(sin(item.pos.y + item.pos.x / 10.0, 2.2, 2.0), sin(item.pos.x + item.pos.y / 30.0, 3.0, 3.0)).nor * 0.1
-    item.vel.x += move.x
-    item.vel.y += move.y
-
-    item.eye.time += fau.delta
-    if item.eye.time > 2.0:
-      circle(4):
-        shoot(eyeBullet, item.entity, item.pos.x, item.pos.y, rot = angle)
-      
-      item.eye.time = 0
 
 sys("player", [Person, Input, Health, Pos]):
   vars:
@@ -437,6 +425,24 @@ sys("player", [Person, Input, Health, Pos]):
     sys.health = item.health.amount
     sys.pos = item.pos.vec2
     sys.cur = item.entity
+
+sys("eye", [Eye]): init: discard #storage for eye count
+
+sys("follower", [Pos, Eye, Solid, Hit, Vel, Animate, Follower]):
+  all:
+    var r = initRand(item.entity.hash.int64)
+    let off = vec2l((r.rand(360.0.rad).float32 + item.eye.rot), 6.0)
+    let move = (sysPlayer.pos.vec2 - item.pos.vec2)
+    let movenor = ((move + off).nor * 0.05)
+    item.vel.x += movenor.x
+    item.vel.y += movenor.y
+
+    item.eye.time += fau.delta
+    item.eye.rot += fau.delta
+    if item.eye.time > 3.0:
+      for i in 0..2:
+        shoot(eyeBullet, item.entity, item.pos.x, item.pos.y, rot = move.angle, speed = 0.07 + i*0.02)
+      item.eye.time = 0
 
 sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
   all:
@@ -471,26 +477,58 @@ sys("joyBoss", [Pos, Joy, Animate]):
 
 sys("fearBoss", [Pos, Fear, Animate, Health]):
   all:
-    item.fear.time += fau.delta
-    if item.health.amount <= 10:
+    item.fear.global += fau.delta
+
+    let phases = 5
+    let phase = max(phases - (item.health.amount / bossHealth * phases).int, 1)
+    let pos = vec2(item.pos.x + 4.px, item.pos.y + 139.px)
+
+    template every(delay: float32, vname: untyped, code: untyped) =
+      item.fear.vname += fau.delta
+      if item.fear.vname >= delay:
+        code
+        item.fear.vname = 0
+
+    template every(delay: float32, code: untyped) =
+      every(delay, time): 
+        code
+
+    template bullet(btype: untyped, ang: float32) =
+      shoot(btype, item.entity, pos.x, pos.y, rot = ang)
+    
+    template makeEye(ai: untyped) = discard newEntityWith(Pos(x: item.pos.x + rand(-0.2..0.2), y: item.pos.y + 1 + rand(-0.2..0.2)), Vel(), Hit(w: 24.px, h: 24.px, y: 12.px), Solid(), Health(amount: 2), Animate(), Eye(), Enemy(), ai())
+
+    case phase:
+    of 1:
+      every(0.3):
+        circle(6):
+          bullet(shadowBullet, angle + item.animate.time / 4.0)
+    of 2:
+      if (item.fear.global / 5).int mod 2 == 0:
+        item.fear.f1 += fau.delta
+      else:
+        item.fear.f1 -= fau.delta
+
+      every 0.12:
+        circle(3):
+          bullet(shadowBullet, angle + item.fear.f1 / 1.3)
+    of 3:
+      every 9, f1:
+        var count = 0
+        while sysEye.groups.len < 8 and count < 2: 
+          makeEye(Follower)
+          count.inc
+      every 0.5:
+        for i in 0..3:
+          circle(3):
+            bullet(shadowBullet, angle + item.fear.global / 3.0 + i / 4.0)
+    else:
+      discard
+
+
+    if item.health.amount <= 60:
       if not item.fear.rage: effectFlash(0, 0, col = %"ffc0ff")
       item.fear.rage = true
-
-    
-    if item.fear.rage:
-      if item.fear.time > 0.15:
-        circle(20):
-          shoot(shadowBullet, item.entity, item.pos.x + 4.px, item.pos.y + 139.px, rot = angle + item.animate.time / 3.0)
-        item.fear.time = 0
-    else:
-      if item.fear.time > 0.25:
-        circle(3):
-          shoot(shadowBullet, item.entity, item.pos.x + 4.px, item.pos.y + 139.px, rot = angle + item.animate.time / 3.0)
-        
-        item.fear.time = 0
-
-        if chance(0.1):
-          discard newEntityWith(Pos(x: item.pos.x + rand(-1..1), y: item.pos.y + 1 + rand(-1..1)), Vel(), Hit(w: 24.px, h: 24.px, y: 12.px), Solid(), Health(amount: 2), Animate(), Eye(), Enemy())
 
 makeTimedSystem()
 
