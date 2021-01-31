@@ -53,6 +53,7 @@ registerComponents(defaultComponentOptions):
     Bullet = object
       shooter: EntityRef
       hitEffect: EffectId
+      rotvel: float32
     Eye = object
       time: float32
       rot: float32
@@ -150,6 +151,9 @@ defineEffects:
   shoot(lifetime = 0.2):
     poly(e.x, e.y, 10, 13.px * e.fin, stroke = 4.px * e.fout + 0.3.px, color = %"f3a0e1")
   
+  despawn(lifetime = 0.2):
+    poly(e.x, e.y, 10, 10.px * e.fout, stroke = 4.px * e.fout + 0.5.px, color = %"f3a0e1")
+  
   ratGet(lifetime = 3):
     let p = "rat_grab".patch
     var a = 1'f32
@@ -205,11 +209,11 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
       
       yield (wcx, wcy, tile(wcx, wcy))
 
-macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1'f32) =
+macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1'f32, rvel: float32 = 0) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
   result = quote do:
     let vel = vec2l(`rot`, `speed`)
-    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`, hitEffect: effectIdHit), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
+    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`, hitEffect: effectIdHit, rotvel: `rvel`), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
 
 template rect(pos: untyped, hit: untyped): Rect = rectCenter(pos.x + hit.x, pos.y + hit.y, hit.w, hit.h)
 
@@ -389,6 +393,13 @@ sys("bulletMove", [Pos, Vel, Bullet]):
   all:
     item.pos.x += item.vel.x
     item.pos.y += item.vel.y
+    let v = item.vel.vec2.rotate(item.bullet.rotvel * fau.delta)
+    item.vel.x = v.x
+    item.vel.y = v.y
+    
+sys("bulletEffect", [Pos, Vel, Bullet, Effect]):
+  all:
+    item.effect.rotation = item.vel.vec2.angle
 
 sys("bulletHitWall", [Pos, Vel, Bullet, Hit]):
   all:
@@ -493,8 +504,8 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
       every(delay, time): 
         code
 
-    template bullet(btype: untyped, ang: float32) =
-      shoot(btype, item.entity, pos.x, pos.y, rot = ang)
+    template bullet(btype: untyped, ang: float32, rotv: float32 = 0.0, vel: float32 = 0.1) =
+      shoot(btype, item.entity, pos.x, pos.y, rot = ang, rvel = rotv, speed = vel)
     
     template makeEye(ai: untyped) = discard newEntityWith(Pos(x: item.pos.x + rand(-0.2..0.2), y: item.pos.y + 1 + rand(-0.2..0.2)), Vel(), Hit(w: 24.px, h: 24.px, y: 12.px), Solid(), Health(amount: 2), Animate(), Eye(), Enemy(), ai())
 
@@ -502,7 +513,8 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
     of 1:
       every(0.3):
         circle(6):
-          bullet(shadowBullet, angle + item.animate.time / 4.0)
+          bullet(shadowBullet, angle + item.animate.time / 4.0, -0.3 * (item.fear.f2.int mod 2 == 0).sign)
+        item.fear.f2 += 1
     of 2:
       if (item.fear.global / 5).int mod 2 == 0:
         item.fear.f1 += fau.delta
@@ -511,7 +523,8 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
 
       every 0.12:
         circle(3):
-          bullet(shadowBullet, angle + item.fear.f1 / 1.3)
+          bullet(shadowBullet, angle + item.fear.f1 / 1.3, 0.4, 0.09 + (item.fear.f2 mod 3) / 3 * 0.05)
+        item.fear.f2 += 1
     of 3:
       every 9, f1:
         var count = 0
@@ -521,7 +534,9 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
       every 0.5:
         for i in 0..3:
           circle(3):
-            bullet(shadowBullet, angle + item.fear.global / 3.0 + i / 4.0)
+            bullet(shadowBullet, angle + item.fear.global / 2.8 + i / 6.0, 1.0, 0.1 + i / 3.0 * 0.06)
+    of 4:
+      discard
     else:
       discard
 
@@ -530,7 +545,16 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
       if not item.fear.rage: effectFlash(0, 0, col = %"ffc0ff")
       item.fear.rage = true
 
-makeTimedSystem()
+sys("timedEffect", [Timed, Pos]):
+  all:
+    item.timed.time += fau.delta
+    if item.timed.time >= item.timed.lifetime:
+      item.timed.time = item.timed.lifetime
+      
+      if item.entity.hasComponent Bullet:
+        effectDespawn(item.pos.x, item.pos.y)
+      
+      item.entity.delete()
 
 sys("followCam", [Pos, Input]):
   all:
