@@ -469,7 +469,6 @@ sys("animation", [Animate]):
   all:
     item.animate.time += fau.delta
 
-
 sys("player", [Person, Input, Health, Pos]):
   vars:
     health: float32
@@ -663,7 +662,10 @@ sys("timedEffect", [Timed, Pos]):
 
 sys("followCam", [Pos, Input]):
   all:
-    fau.cam.pos = vec2(item.pos.x, item.pos.y + 42.px)
+    if won:
+      fau.cam.pos.lerp(vec2(worldSize / 2.0, worldSize / 2.0 + 3), 0.1)
+    else:
+      fau.cam.pos = vec2(item.pos.x, item.pos.y + 42.px)
     fau.cam.pos += vec2((fau.widthf mod scl) / scl, (fau.heightf mod scl) / scl) * fau.pixelScl
 
 sys("draw", [Main]):
