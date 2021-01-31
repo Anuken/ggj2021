@@ -16,7 +16,7 @@ const
   playerHealth = 5
   layerCutscene = 240
   maxRats = 3
-  bossHealth = 300'f32
+  bossHealth = 240'f32
 
 type
   Block = ref object of Content
@@ -71,6 +71,7 @@ registerComponents(defaultComponentOptions):
       time: float32
       rage: bool
       f1, f2, f3, f4: float32
+      phase: int
     Joy = object
       time: float32
     
@@ -216,6 +217,8 @@ macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damag
     let vel = vec2l(`rot`, `speed`)
     discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: `life`), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`, hitEffect: effectIdHit, rotvel: `rvel`, acceleration: `accel`), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
 
+template pitchRange(): float32 = rand(0.8..1.2).float32
+
 template rect(pos: untyped, hit: untyped): Rect = rectCenter(pos.x + hit.x, pos.y + hit.y, hit.w, hit.h)
 
 macro whenComp(entity: EntityRef, t: typedesc, body: untyped) =
@@ -331,7 +334,7 @@ sys("controlled", [Person, Input, Pos, Vel]):
         item.person.shoot = reload
         effectShoot(offset.x, offset.y)
         item.person.flip = ang >= 90.rad and ang < 270.rad
-        #soundShoot.play(pitch = rand(0.8..1.2))
+        soundShoot.play(pitchRange, volume = 0.8)
 
 sys("animatePerson", [Vel, Person]):
   all:
@@ -374,15 +377,23 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
             let pos = hitter.fetchComponent Pos
             effectFearHit(pos.x, pos.y)
 
+            if target.hasComponent Person:
+              soundPlayerDamage.play(pitchRange)
+            elif target.hasComponent Enemy:
+              soundEnemyDamage.play(pitchRange)
+
             if health.amount <= 0:
               let tpos = target.fetchComponent Pos
 
-              if target.hasComponent Joy: effectJoyDeath(tpos.x, tpos.y)
+              if target.hasComponent Joy: 
+                effectJoyDeath(tpos.x, tpos.y)
+                soundFlowerDeath.play()
               elif target.hasComponent Fear: 
                 effectFearDeath(tpos.x, tpos.y)
                 rats.inc
                 won = true
                 effectFlash(0, 0, col = colorWhite)
+                soundRatDefeat.play()
                 
                 clearAll(sysBulletMove)
                 clearAll(sysEye)
@@ -504,6 +515,7 @@ sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
       if rats != maxRats - 1:
         effectRatGet(item.pos.x, item.pos.y)
         effectRatPoof(item.pos.x, item.pos.y)
+        soundRatPickup.play()
         item.entity.delete()
         rats.inc
       else:
@@ -523,6 +535,7 @@ sys("joyBoss", [Pos, Joy, Animate]):
         shoot(flowerBullet, item.entity, item.pos.x, item.pos.y + 166.px, rot = angle + item.animate.time / 3.0, speed = 0.07)
       
       item.joy.time = 0
+      soundFlowerShoot.play(pitchRange)
 
 sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
   all:
@@ -531,6 +544,10 @@ sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
     let phases = 5
     let phase = max(phases - (item.health.amount / bossHealth * phases).int, 1)
     let pos = vec2(item.pos.x + 4.px, item.pos.y + 139.px)
+
+    if phase != item.fear.phase:
+      item.fear.phase = phase
+      soundRatPhase.play()
 
     template every(delay: float32, vname: untyped, code: untyped) =
       item.fear.vname += fau.delta
@@ -618,7 +635,9 @@ sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
 
 
     if item.health.amount <= 60:
-      if not item.fear.rage: effectFlash(0, 0, col = %"ffc0ff")
+      if not item.fear.rage: 
+        effectFlash(0, 0, col = %"ffc0ff")
+        soundRatRage.play()
       item.fear.rage = true
 
 sys("timedEffect", [Timed, Pos]):
