@@ -14,7 +14,7 @@ const
   shadowColor = rgba(0, 0, 0, 0.2)
   layerShadow = layerFloor + 100
   playerHealth = 5
-  layerCutscene = 300
+  layerCutscene = 240
   maxRats = 3
   bossHealth = 300'f32
 
@@ -331,7 +331,7 @@ sys("controlled", [Person, Input, Pos, Vel]):
         item.person.shoot = reload
         effectShoot(offset.x, offset.y)
         item.person.flip = ang >= 90.rad and ang < 270.rad
-        soundShoot.play(pitch = rand(0.8..1.2))
+        #soundShoot.play(pitch = rand(0.8..1.2))
 
 sys("animatePerson", [Vel, Person]):
   all:
@@ -385,6 +385,7 @@ sys("collide", [Pos, Vel, Bullet, Hit]):
                 effectFlash(0, 0, col = colorWhite)
                 
                 clearAll(sysBulletMove)
+                clearAll(sysEye)
                 target.delete()
                 break
               elif target.hasComponent Person:
@@ -523,7 +524,7 @@ sys("joyBoss", [Pos, Joy, Animate]):
       
       item.joy.time = 0
 
-sys("fearBoss", [Pos, Fear, Animate, Health]):
+sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
   all:
     item.fear.global += fau.delta
 
@@ -563,16 +564,32 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
           bullet(shadowBullet, angle + item.fear.f1 / 1.3, 0.4, 0.09 + (item.fear.f2 mod 3) / 3 * 0.05)
         item.fear.f2 += 1
     of 3:
-      every 6, f1:
+      every 7, f1:
         var count = 0
         while sysEye.groups.len < 8 and count < 2: 
           makeEye(Follower)
           count.inc
-      every 0.43:
+      every 1.1:
+        item.fear.f3 += 1
         for i in 0..3:
           circle(3):
-            bullet(shadowBullet, angle + item.fear.global / 2.5 + i / 6.0, 1.0, 0.1 + i / 3.0 * 0.06)
+            let m = (item.fear.f3.int mod 2)
+            bullet(shadowBullet, angle + m * 2.0 + i / 6.0, 1.0 * (m == 0).sign, 0.1 + i / 3.0 * 0.06)
+        
+      every 1.3, f2:
+        let base = pos.angle(sysPlayer.pos)
+        for i in -2..2:
+          bullet(shadowBullet, base + i * 0.09, -1.0 * i)
     of 5:
+      if (item.fear.global / 5).int mod 2 == 0:
+        item.fear.f3 += fau.delta
+      else:
+        item.fear.f3 -= fau.delta
+      
+      let v = vec2(vec2(worldSize / 2, worldSize / 2) - item.pos.vec2).lim(0.02)
+      item.vel.x += v.x
+      item.vel.y += v.y
+
       every 11, f1:
         var count = 0
         while sysEye.groups.len < 10 and count < 2: 
@@ -581,8 +598,12 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
       every 0.2:
         for i in 0..3:
           circle(3):
-            bullet(shadowBullet, angle + item.fear.global / 2.8, i / 3.0 * 2.0, 0.02 + i / 3.0 * 0.00, 0.06)
+            bullet(shadowBullet, angle + item.fear.f3 / 2.8, i / 3.0 * 2.0, 0.02 + i / 3.0 * 0.00, 0.06)
     of 4:
+      let v = vec2(sin(item.pos.y, 3.6, 1), sin(item.pos.x, 3.6, 1)).lim(0.02)
+      item.vel.x += v.x
+      item.vel.y += v.y
+
       every 3, f1:
         var count = 0
         while sysEye.groups.len < 8 and count < 1: 
