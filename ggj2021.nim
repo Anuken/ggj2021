@@ -210,11 +210,11 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
       
       yield (wcx, wcy, tile(wcx, wcy))
 
-macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1'f32, rvel, accel: float32 = 0) =
+macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1'f32, rvel, accel: float32 = 0, life: float32 = 4) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
   result = quote do:
     let vel = vec2l(`rot`, `speed`)
-    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`, hitEffect: effectIdHit, rotvel: `rvel`, acceleration: `accel`), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
+    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: `life`), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`, hitEffect: effectIdHit, rotvel: `rvel`, acceleration: `accel`), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
 
 template rect(pos: untyped, hit: untyped): Rect = rectCenter(pos.x + hit.x, pos.y + hit.y, hit.w, hit.h)
 
@@ -327,7 +327,7 @@ sys("controlled", [Person, Input, Pos, Vel]):
       if item.person.shoot <= 0:
         let offset = shootPos * vec2(-item.person.flip.sign, 1) + item.pos.vec2
         let ang = offset.angle(mouseWorld())
-        shoot(playerBullet, item.entity, offset.x, offset.y, rot = ang, speed = 0.3)
+        shoot(playerBullet, item.entity, offset.x, offset.y, rot = ang, speed = 0.3, life = 0.84)
         item.person.shoot = reload
         effectShoot(offset.x, offset.y)
         item.person.flip = ang >= 90.rad and ang < 270.rad
