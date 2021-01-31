@@ -1,4 +1,4 @@
-import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils, bloom, sequtils, hashes
+import ecs, presets/[basic, effects, content], math, random, quadtree, macros, strutils, sequtils, hashes
 
 static: echo staticExec("faupack -p:assets-raw/sprites -o:assets/atlas --max:2048")
 
@@ -13,7 +13,7 @@ const
   layerBloom = 10'f32
   shadowColor = rgba(0, 0, 0, 0.2)
   layerShadow = layerFloor + 100
-  playerHealth = 5
+  playerHealth = 6
   layerCutscene = 240
   maxRats = 3
   bossHealth = 240'f32
@@ -93,8 +93,6 @@ makeContent:
   darkgrass = Block()
   tile = Block()
 
-when defined(debug): 
-  var font: Font
 var rats: int = 0
 var arena: bool
 var didIntro = false
@@ -282,12 +280,12 @@ template reset() =
   for pos in [vec2(34, 29), vec2(25, 53)]:
     discard newEntityWith(Pos(x: pos.x, y: pos.y), Joy(), Vel(), Hit(w: 2, h: 6, y: 3), Solid(), Health(amount: 15), Animate(), Enemy())
 
-  when defined(debug):
-    makeArena()
+  #when defined(debug):
+  #  makeArena()
 
   if not didIntro:
-    when not defined(debug):
-      effectStart(0, 0)
+    #when not defined(debug):
+    effectStart(0, 0)
     didIntro = true
   
   if arena:
@@ -303,18 +301,31 @@ template fences(x, y: int, w, h: int, base = blockFence, left = blockFencel, rig
     setWall(x + i, y + h, base)
 
 sys("init", [Main]):
+  vars:
+    vgarden: Voice
+    vboss: Voice
 
   init:
     fau.pixelScl = 1.0 / tileSizePx
-
     initContent()
-
     reset()
+
   start:
     showTime += fau.delta
-    if not defined(debug):
-      sysControlled.paused = won or showTime < 4
-      sysJoyBoss.paused = sysControlled.paused
+    #if not defined(debug):
+    sysControlled.paused = won or showTime < 4
+    sysJoyBoss.paused = sysControlled.paused
+
+    if not(arena) or won:
+      sys.vboss.stop()
+      if not sys.vgarden.valid:
+        sys.vgarden = musicGarden.play(loop = true, volume = 1.2)
+    else:
+      sys.vgarden.stop()
+      if not sys.vboss.valid:
+        sys.vboss = musicGardenboss.play(loop = true)
+    
+
 
 sys("all", [Pos]):
   init:
@@ -520,13 +531,14 @@ sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
         item.entity.delete()
         rats.inc
       else:
-        effectFlash(0, 0, col = colorBlack, life = 3)
-        makeArena()
         if sysPlayer.cur.alive:
           let pos = sysPlayer.cur.fetchComponent Pos
           pos.x = worldSize / 2.0
           pos.y = worldSize / 2.0 - 10
           item.entity.delete()
+        
+        effectFlash(0, 0, col = colorBlack, life = 3)
+        makeArena()
 
 sys("joyBoss", [Pos, Joy, Animate]):
   all:
@@ -591,9 +603,9 @@ sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
         while sysEye.groups.len < 8 and count < 2: 
           makeEye(Follower)
           count.inc
-      every 1.1:
+      every 1.2:
         item.fear.f3 += 1
-        for i in 0..3:
+        for i in 0..2:
           circle(3):
             let m = (item.fear.f3.int mod 2)
             bullet(shadowBullet, angle + m * 2.0 + i / 6.0, 1.0 * (m == 0).sign, 0.1 + i / 3.0 * 0.06)
@@ -604,9 +616,9 @@ sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
           bullet(shadowBullet, base + i * 0.09, -1.0 * i)
     of 5:
       if (item.fear.global / 4).int mod 2 == 0:
-        item.fear.f3 += fau.delta * 1.1
+        item.fear.f3 += fau.delta
       else:
-        item.fear.f3 -= fau.delta * 1.1
+        item.fear.f3 -= fau.delta
       
       let v = vec2(vec2(worldSize / 2, worldSize / 2) - item.pos.vec2).lim(0.02)
       item.vel.x += v.x
@@ -617,7 +629,7 @@ sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
         while sysEye.groups.len < 10 and count < 2: 
           makeEye(Circler)
           count.inc
-      every 0.2:
+      every 0.21:
         for i in 0..3:
           circle(3):
             bullet(shadowBullet, angle + item.fear.f3 / 2.8, i / 3.0 * 2.0, 0.02 + i / 3.0 * 0.00, 0.06)
@@ -626,14 +638,14 @@ sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
       item.vel.x += v.x
       item.vel.y += v.y
 
-      every 3, f1:
+      every 4, f1:
         var count = 0
         while sysEye.groups.len < 8 and count < 1: 
           makeEye(Circler)
           count.inc
       every 0.4:
         let ang = pos.angle(sysPlayer.pos)
-        for i in -2..2:
+        for i in -2..1:
           bullet(shadowBullet, ang - i * 30.rad, i / 2.0, 0.1, 0.06)
     else:
       discard
@@ -659,12 +671,9 @@ sys("draw", [Main]):
     buffer: Framebuffer
     shadows: Framebuffer
     healthf: float32
-    #bloom: Bloom
   init:
     sys.buffer = newFramebuffer()
     sys.shadows = newFramebuffer()
-    when defined(debug): font = loadFont("font.ttf")
-    #sys.bloom = newBloom()
 
     #load all block textures before rendering
     for b in blockList:
@@ -690,7 +699,6 @@ sys("draw", [Main]):
     let 
       buf = sys.buffer
       shadows = sys.shadows
-      #bloom = sys.bloom
 
     buf.push()
 
@@ -718,13 +726,9 @@ sys("draw", [Main]):
       fillRect(0, 0, w + pad*2, h + pad*2, color = %"382b8f")
       fillRect(pad, pad, w, h, color = rgba(0, 0, 0, 1))
       fillRect(pad, pad, w * healthf / playerHealth, h, color = rgba(1, 0, 0, 1))
-      #font.draw("Rats: " & $rats & "/" & $maxRats, vec2(fau.widthf / 2.0, fau.heightf), align = faBot, scale = 5.0, color = colorBlack)
-      when defined(debug): font.draw("xy: " & $mouseWorld().x.int & ", " & $mouseWorld().y.int, vec2(fau.widthf / 2.0, fau.heightf), align = faBot, scale = 5.0, color = colorBlack)
 
       fau.cam.use()
     )
-
-    #drawLayer(layerBloom, proc() = bloom.capture(), proc() = bloom.render())
 
     for x, y, t in eachTile():
       let r = hashInt(x + y * worldSize)
