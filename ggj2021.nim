@@ -53,7 +53,7 @@ registerComponents(defaultComponentOptions):
     Bullet = object
       shooter: EntityRef
       hitEffect: EffectId
-      rotvel: float32
+      rotvel, acceleration: float32
     Eye = object
       time: float32
       rot: float32
@@ -64,6 +64,7 @@ registerComponents(defaultComponentOptions):
       time: float32
     
     Follower = object
+    Circler = object
 
     Fear = object
       global: float32
@@ -209,11 +210,11 @@ iterator eachTile*(): tuple[x, y: int, tile: Tile] =
       
       yield (wcx, wcy, tile(wcx, wcy))
 
-macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1'f32, rvel: float32 = 0) =
+macro shoot(t: untyped, ent: EntityRef, xp, yp, rot: float32, speed = 0.1, damage = 1'f32, rvel, accel: float32 = 0) =
   let effectId = ident("effectId" & t.repr.capitalizeAscii)
   result = quote do:
     let vel = vec2l(`rot`, `speed`)
-    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`, hitEffect: effectIdHit, rotvel: `rvel`), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
+    discard newEntityWith(Pos(x: `xp`, y: `yp`), Timed(lifetime: 4), Effect(id: `effectId`, rotation: `rot`), Bullet(shooter: `ent`, hitEffect: effectIdHit, rotvel: `rvel`, acceleration: `accel`), Hit(w: 0.2, h: 0.2), Vel(x: vel.x, y: vel.y), Damage(amount: `damage`))
 
 template rect(pos: untyped, hit: untyped): Rect = rectCenter(pos.x + hit.x, pos.y + hit.y, hit.w, hit.h)
 
@@ -393,7 +394,8 @@ sys("bulletMove", [Pos, Vel, Bullet]):
   all:
     item.pos.x += item.vel.x
     item.pos.y += item.vel.y
-    let v = item.vel.vec2.rotate(item.bullet.rotvel * fau.delta)
+    var v = item.vel.vec2.rotate(item.bullet.rotvel * fau.delta)
+    v.len = (v.len + item.bullet.acceleration * fau.delta)
     item.vel.x = v.x
     item.vel.y = v.y
     
@@ -455,6 +457,22 @@ sys("follower", [Pos, Eye, Solid, Hit, Vel, Animate, Follower]):
         shoot(eyeBullet, item.entity, item.pos.x, item.pos.y, rot = move.angle, speed = 0.07 + i*0.02)
       item.eye.time = 0
 
+sys("circler", [Pos, Eye, Solid, Hit, Vel, Animate, Circler]):
+  all:
+    var r = initRand(item.entity.hash.int64)
+    let off = vec2l((r.rand(360.0.rad).float32 + item.eye.rot / 5.0), 20.0)
+    let move = (vec2(worldSize / 2.0, worldSize / 2.0) - item.pos.vec2)
+    let movenor = ((move + off).nor * 0.07)
+    item.vel.x += movenor.x
+    item.vel.y += movenor.y
+
+    item.eye.time += fau.delta
+    item.eye.rot += fau.delta
+    if item.eye.time > 3.0:
+      for i in 0..2:
+        shoot(eyeBullet, item.entity, item.pos.x, item.pos.y, rot = item.pos.vec2.angle(sysPlayer.pos), speed = 0.07 + i*0.02)
+      item.eye.time = 0
+
 sys("ratmove", [Pos, Rat, Solid, Hit, Vel]):
   all:
     let move = vec2(sin(item.pos.y + item.pos.x / 10.0, 4, 2.0), sin(item.pos.x + item.pos.y / 30.0, 5.0, 3.0)).nor * 0.01 * 0.4
@@ -504,8 +522,8 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
       every(delay, time): 
         code
 
-    template bullet(btype: untyped, ang: float32, rotv: float32 = 0.0, vel: float32 = 0.1) =
-      shoot(btype, item.entity, pos.x, pos.y, rot = ang, rvel = rotv, speed = vel)
+    template bullet(btype: untyped, ang: float32, rotv: float32 = 0.0, vel: float32 = 0.1, acc: float32 = 0.0) =
+      shoot(btype, item.entity, pos.x, pos.y, rot = ang, rvel = rotv, speed = vel, accel = acc)
     
     template makeEye(ai: untyped) = discard newEntityWith(Pos(x: item.pos.x + rand(-0.2..0.2), y: item.pos.y + 1 + rand(-0.2..0.2)), Vel(), Hit(w: 24.px, h: 24.px, y: 12.px), Solid(), Health(amount: 2), Animate(), Eye(), Enemy(), ai())
 
@@ -535,8 +553,26 @@ sys("fearBoss", [Pos, Fear, Animate, Health]):
         for i in 0..3:
           circle(3):
             bullet(shadowBullet, angle + item.fear.global / 2.8 + i / 6.0, 1.0, 0.1 + i / 3.0 * 0.06)
+    of 5:
+      every 11, f1:
+        var count = 0
+        while sysEye.groups.len < 10 and count < 2: 
+          makeEye(Circler)
+          count.inc
+      every 0.2:
+        for i in 0..3:
+          circle(3):
+            bullet(shadowBullet, angle + item.fear.global / 2.8, i / 3.0 * 2.0, 0.02 + i / 3.0 * 0.00, 0.06)
     of 4:
-      discard
+      every 3, f1:
+        var count = 0
+        while sysEye.groups.len < 8 and count < 1: 
+          makeEye(Circler)
+          count.inc
+      every 0.4:
+        let ang = pos.angle(sysPlayer.pos)
+        for i in -2..2:
+          bullet(shadowBullet, ang - i * 30.rad, i / 2.0, 0.1, 0.06)
     else:
       discard
 
