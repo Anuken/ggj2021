@@ -314,6 +314,7 @@ sys("init", [Main]):
     showTime += fau.delta
     if not defined(debug):
       sysControlled.paused = won or showTime < 4
+      sysJoyBoss.paused = sysControlled.paused
 
 sys("all", [Pos]):
   init:
@@ -548,6 +549,10 @@ sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
     if phase != item.fear.phase:
       item.fear.phase = phase
       soundRatPhase.play()
+      if phase == 5:
+        effectFlash(0, 0, col = %"ffc0ff")
+        soundRatRage.play()
+        item.fear.rage = true
 
     template every(delay: float32, vname: untyped, code: untyped) =
       item.fear.vname += fau.delta
@@ -598,10 +603,10 @@ sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
         for i in -2..2:
           bullet(shadowBullet, base + i * 0.09, -1.0 * i)
     of 5:
-      if (item.fear.global / 5).int mod 2 == 0:
-        item.fear.f3 += fau.delta
+      if (item.fear.global / 4).int mod 2 == 0:
+        item.fear.f3 += fau.delta * 1.1
       else:
-        item.fear.f3 -= fau.delta
+        item.fear.f3 -= fau.delta * 1.1
       
       let v = vec2(vec2(worldSize / 2, worldSize / 2) - item.pos.vec2).lim(0.02)
       item.vel.x += v.x
@@ -632,13 +637,6 @@ sys("fearBoss", [Pos, Fear, Animate, Health, Vel]):
           bullet(shadowBullet, ang - i * 30.rad, i / 2.0, 0.1, 0.06)
     else:
       discard
-
-
-    if item.health.amount <= 60:
-      if not item.fear.rage: 
-        effectFlash(0, 0, col = %"ffc0ff")
-        soundRatRage.play()
-      item.fear.rage = true
 
 sys("timedEffect", [Timed, Pos]):
   all:
